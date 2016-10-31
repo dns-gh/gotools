@@ -1,0 +1,8 @@
+- tool to add copyrights automatically (when there is none) to code files
+	* checks timestamp and add the name of the author given in argument
+- tool to send simple emails from A to B with simply text data and/or zip attachments
+- refactor asciigen
+- refactor asciirender
+- add password protection to zip/unzip
+- add http request tool to brute force some standard login page
+- improve logparser package and make a tool with it
