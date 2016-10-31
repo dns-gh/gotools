@@ -1,5 +1,7 @@
 # gotools
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/dns-gh/gotools)](https://goreportcard.com/report/github.com/dns-gh/gotools)
+
 This repository contains a collection of Go tools.
 
 ## Motivation

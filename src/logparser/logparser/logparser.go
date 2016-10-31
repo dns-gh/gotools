@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func PrintError(err error, depth int) {
+func printError(err error, depth int) {
 	if err != nil {
 		_, fn, line, _ := runtime.Caller(depth)
 		filename := path.Base(fn)
@@ -19,16 +19,17 @@ func PrintError(err error, depth int) {
 	}
 }
 
-func Check(err error) {
+func check(err error) {
 	if err != nil {
-		PrintError(err, 2)
+		printError(err, 2)
 		os.Exit(1)
 	}
 }
 
+// FileToLines extract the lines of a given file into a slice of string
 func FileToLines(path string) ([]string, error) {
 	file, err := os.Open(path)
-	Check(err)
+	check(err)
 	defer file.Close()
 
 	var lines []string
@@ -53,15 +54,16 @@ func GetStringValue(leftBeacon, rightBeacon, line string) (string, error) {
 	return line[index : index+right], nil
 }
 
+// GetMapValues return the values mapped as float64
 func GetMapValues(path string) (*map[string]float64, error) {
 	lines, err := FileToLines(path)
-	Check(err)
+	check(err)
 	m := make(map[string]float64)
 	for _, v := range lines {
 		val, err := GetStringValue("[[", "]]", v)
-		Check(err)
+		check(err)
 		intVal, err := strconv.ParseFloat(val, 64)
-		Check(err)
+		check(err)
 		m[val] += intVal
 	}
 	return &m, nil

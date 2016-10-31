@@ -18,7 +18,7 @@ func main() {
 	//relativeFilePathPtr := flag.String("rpath", "", "relative file path to the test dir")
 	xstepPtr := flag.Float64("xstep", math.Pi/2, "x step of the grid")
 	ystepPtr := flag.Float64("ystep", math.Pi/2, "y step of the grid")
-	freqPtr := flag.Float64("freq", 1.0, "sinusoidal frequency at the begining of the generation")
+	freqPtr := flag.Float64("freq", 1.0, "sinusoidal frequency at the beginning of the generation")
 	freqEndPtr := flag.Float64("lastfreq", 1.0, "sinusoidal frequency at the end of the generation")
 	xllPtr := flag.Float64("xll", 0, "xllcorner value")
 	yllPtr := flag.Float64("yll", 0, "yllcorner value")

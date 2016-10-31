@@ -61,6 +61,30 @@ func getColor(v float64) color.RGBA {
 	return color.RGBA{uint8(255 * r), uint8(255 * g), uint8(255 * b), 255}
 }
 
+func splitMD(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		switch r {
+		case ' ', '\r', '\n':
+			return true
+		}
+		return false
+	})
+}
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+func readLines(path string) []string {
+
+	buff, err := ioutil.ReadFile(path)
+	check(err)
+	s := string(buff)
+	return strings.Split(s, "\n")
+}
+
 func main() {
 	// Read ASCII data
 	// TODO
@@ -68,7 +92,7 @@ func main() {
 	lines = readLines("./testdata/asciidata/test.asc")
 
 	numLines := 0
-	for _, _ = range lines {
+	for _ = range lines {
 		numLines += 1
 	}
 	fmt.Println("numlines : ", numLines)
@@ -81,20 +105,20 @@ func main() {
 	var rdata asciiData
 	var splitedRow []string
 	//var tempValue int64
-	splitedRow = SplitMD(lines[0])
+	splitedRow = splitMD(lines[0])
 	tempValue, err := strconv.ParseInt(splitedRow[1], 10, 0)
 	rdata.ncols = int(tempValue)
-	splitedRow = SplitMD(lines[1])
+	splitedRow = splitMD(lines[1])
 	tempValue, err = strconv.ParseInt(splitedRow[1], 10, 0)
 	rdata.nrows = int(tempValue)
 
-	splitedRow = SplitMD(lines[2])
+	splitedRow = splitMD(lines[2])
 	rdata.xllcorner, err = strconv.ParseFloat(splitedRow[1], 16)
-	splitedRow = SplitMD(lines[3])
+	splitedRow = splitMD(lines[3])
 	rdata.yllcorner, _ = strconv.ParseFloat(splitedRow[1], 16)
-	splitedRow = SplitMD(lines[4])
+	splitedRow = splitMD(lines[4])
 	rdata.CELLSIZE, _ = strconv.ParseFloat(splitedRow[1], 16)
-	splitedRow = SplitMD(lines[5])
+	splitedRow = splitMD(lines[5])
 	rdata.NODATA_VALUE, _ = strconv.ParseInt(splitedRow[1], 10, 0)
 
 	fmt.Println(rdata.ncols)
@@ -104,9 +128,9 @@ func main() {
 	fmt.Println(rdata.CELLSIZE)
 	fmt.Println(rdata.NODATA_VALUE)
 
-	splitData := SplitMD(lines[6])
+	splitData := splitMD(lines[6])
 	for i := 7; i < numLines; i++ {
-		splitedLine := SplitMD(lines[i])
+		splitedLine := splitMD(lines[i])
 		for j := 0; j < len(splitedLine); j++ {
 			splitData = append(splitData, splitedLine[j])
 		}
@@ -168,30 +192,5 @@ func main() {
 	if err = png.Encode(imageFile, rgbaData); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
-	}
-}
-
-func readLines(path string) []string {
-
-	buff, err := ioutil.ReadFile(path)
-	check(err)
-	s := string(buff)
-	return strings.Split(s, "\n")
-}
-
-// Split with multiple delimiters
-func SplitMD(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool {
-		switch r {
-		case ' ', '\r', '\n':
-			return true
-		}
-		return false
-	})
-}
-
-func check(e error) {
-	if e != nil {
-		panic(e)
 	}
 }

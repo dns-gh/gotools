@@ -29,6 +29,7 @@ func zipFile(source, path string, writer *zip.Writer) error {
 	return err
 }
 
+// Zip archive the given folder into a zip file
 func Zip(source string) (string, error) {
 	info, err := os.Stat(source)
 	if os.IsNotExist(err) {
@@ -95,6 +96,7 @@ func makeFolder(folder string) (string, error) {
 	return target, nil
 }
 
+// Unzip unzip the given archive
 func Unzip(archive string) (string, error) {
 	reader, err := zip.OpenReader(archive)
 	if err != nil {

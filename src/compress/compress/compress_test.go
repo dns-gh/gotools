@@ -92,6 +92,7 @@ func checkContent(t *testing.T, path, expected string) {
 	defer file.Close()
 	bytes := make([]byte, len(expected))
 	_, err = file.Read(bytes)
+	assert(t, err)
 	check(t, string(bytes) == expected)
 }
 

@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-type State struct {
+type state struct {
 	charset   string
 	indexes   []int
 	candidate string
@@ -20,8 +20,8 @@ func replaceAt(str string, replacement string, index int) string {
 	return str[:index] + replacement + str[index+1:]
 }
 
-func makeState(charset string, maxLength int) *State {
-	return &State{
+func makestate(charset string, maxLength int) *state {
+	return &state{
 		charset:   charset,
 		candidate: "",
 		indexes:   make([]int, maxLength),
@@ -30,7 +30,7 @@ func makeState(charset string, maxLength int) *State {
 	}
 }
 
-func (s *State) stop() {
+func (s *state) stop() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.done == nil {
@@ -40,7 +40,7 @@ func (s *State) stop() {
 	s.done = nil
 }
 
-func (s *State) incremente(index int) {
+func (s *state) incremente(index int) {
 	if index >= s.maxLength {
 		s.candidate += "_invalid"
 		return
@@ -60,7 +60,7 @@ func (s *State) incremente(index int) {
 	s.candidate = replaceAt(s.candidate, s.charset[at:at+1], index)
 }
 
-func (s *State) next() string {
+func (s *state) next() string {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.candidate == "" {
@@ -71,9 +71,11 @@ func (s *State) next() string {
 	return s.candidate
 }
 
+// BruteForce launch brute-force algorithm using given input and checks
+// if there is a match using the operand argument
 func BruteForce(maxLength, cpu int, charset string, operand func(string) bool) error {
 	runtime.GOMAXPROCS(cpu)
-	state := makeState(charset, maxLength)
+	state := makestate(charset, maxLength)
 
 	solution := ""
 	for i := 0; i < cpu; i++ {
