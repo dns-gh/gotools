@@ -1,8 +1,21 @@
-- tool to add copyrights automatically (when there is none) to code files
-	* checks timestamp and add the name of the author given in argument
-- tool to send simple emails from A to B with simply text data and/or zip attachments
+-- TOOLS --
+- tool to add copyrights automatically (when there is none) to code files (checks timestamp and add the name of the author given in argument)
+- email tool to send simple emails from A to B with simply text data and/or zip attachments
+- add password protection to zip/unzip
+- hacking tools:
+	* add http request tool to brute force some standard login page
+	* add brute force tool for encrypted pdf files
+	* record every input made (keyboard and mouse)
+- image sorter tool:
+	* tool to put in order (into the right folders) image files (timestamped in a way by their name) from a given folder
+
+-- PACKAGES --
+- package to walk recursively through directories in lexicographical order or not, applying operand on directories or not
+- improve logparser package and make a tool with it
+- rotative logs package
+- package to merge flag and a config file with predominance of flags
+- mathematical package: advanced simulation/algorithms
+
+-- IMPROVEMENTS -- 
 - refactor asciigen
 - refactor asciirender
-- add password protection to zip/unzip
-- add http request tool to brute force some standard login page
-- improve logparser package and make a tool with it
