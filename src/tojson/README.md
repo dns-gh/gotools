@@ -1,5 +1,8 @@
 ## tojson package
 
+[![GoDoc](https://godoc.org/github.com/dns-gh/gotools/src/tojson?status.png)]
+(https://godoc.org/github.com/dns-gh/gotools/src/tojson)
+
 Simple wrapper over the encoding/json package to save and load data to a file into json format
 
 ## Motivation

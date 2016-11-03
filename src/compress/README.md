@@ -1,5 +1,8 @@
 ## Compression tools
 
+For the compress package: [![GoDoc](https://godoc.org/github.com/dns-gh/gotools/src/compress/compress?status.png)]
+(https://godoc.org/github.com/dns-gh/gotools/src/compress/compress)
+
 Some common useful compression tools. Starts with zip/unzip.
 
 ## Installation

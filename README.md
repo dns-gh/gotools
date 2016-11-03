@@ -12,7 +12,7 @@ Feel free to give ideas and help me in this effort! :)
 
 ## Links to each project
 
-# tools
+### tools
 
 [Hacking tools](src/hacking/README.md)
 
@@ -24,7 +24,7 @@ Feel free to give ideas and help me in this effort! :)
 
 [Log parser tool](src/logparser/README.md)
 
-# packages
+### packages
 
 [gotrace package](src/gotrace/gotrace.go)
 
