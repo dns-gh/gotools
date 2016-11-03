@@ -1,5 +1,5 @@
 // Package flagsconfig enables to save user defined key-value pairs
-// and flags into a configuration file written in json format.
+// and used flags at runtime into a configuration file written in json format.
 package flagsconfig
 
 import (
@@ -74,16 +74,36 @@ func (c *Config) Parse(path string) error {
 	return c.saveFlags()
 }
 
-// NewConfig makes a Config given a config file path and a list
+// NewConfig makes a Config given a default config file path and a list
 // of filtered flags not to appear in the config file.
+// Note that the 'config' flag is defined by this method and added
+// to the list of filtered flags.
 func NewConfig(path string, filter ...string) (*Config, error) {
+	// print defaults flags when -h/--help is used
+	flag.Usage = func() {
+		flag.PrintDefaults()
+	}
+	// checks if the config flag is already defined
+	// Note that in the case where the user define the 'config' flag
+	// ahead of calling NewConfig, the user is forced to call flag.Parse()
+	// also to retrieve the corresponding value and pass it to the first
+	// argument of NewConfig.
+	configKey := "config"
+	configFile := path // this variable will be used if the 'config' flag is already defined
+	if flag.Lookup(configKey) == nil {
+		flag.StringVar(&configFile, configKey, configFile, "configuration filename")
+	}
+	// parses the flags
+	flag.Parse()
 	c := &Config{
 		filter: make(map[string]struct{}),
 	}
+	// add the 'config' flag to the list of filtered flags by default
+	c.filter[configKey] = struct{}{}
 	for _, v := range filter {
 		c.filter[v] = struct{}{}
 	}
-	return c, c.Parse(path)
+	return c, c.Parse(configFile)
 }
 
 // Update updates a pair of key-value flags
