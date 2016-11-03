@@ -8,11 +8,9 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
-	"time"
 )
 
 const (
-	removeTimeout = 15 * time.Second
 	currentFolder = "."
 	fileTest1     = "test.1"
 	fileTest2     = "test.2"
