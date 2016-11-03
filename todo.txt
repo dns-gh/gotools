@@ -13,9 +13,11 @@
 - package to walk recursively through directories in lexicographical order or not, applying operand on directories or not
 - improve logparser package and make a tool with it
 - rotative logs package
-- package to merge flag and a config file with predominance of flags
+[DONE] - package to merge flag and a config file with predominance of flags
+[DONE] - package to save and load json data easily
 - mathematical package: advanced simulation/algorithms
 
 -- IMPROVEMENTS -- 
 - refactor asciigen
 - refactor asciirender
+- use of launchpad/gocheck for go tests
