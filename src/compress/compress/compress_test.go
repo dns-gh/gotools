@@ -8,16 +8,15 @@ import (
 )
 
 const (
-	currentFolder = "."
-	fileTest1     = "test.1"
-	fileTest2     = "test.2"
-	testData      = "this is a test"
+	fileTest1 = "test.1"
+	fileTest2 = "test.2"
+	testData  = "this is a test"
 )
 
 func makeFiles(t *testing.T) string {
-	unique := gotrace.MakeUniqueFolder(t)
-	root := filepath.Join(currentFolder, unique)
-	sub := filepath.Join(currentFolder, unique, gotrace.MakeUniqueFolder(t))
+	unique := gotrace.MakeUniqueTestFolder(t)
+	root := filepath.Join(gotrace.GetTestFolder(), unique)
+	sub := filepath.Join(gotrace.GetTestFolder(), unique, gotrace.MakeUniqueFolder(t))
 	os.MkdirAll(sub, 0777)
 	file1, err := os.Create(filepath.Join(root, fileTest1))
 	gotrace.Assert(t, err)
@@ -36,7 +35,7 @@ func makeZip(t *testing.T) string {
 	gotrace.Assert(t, err)
 	info, err := os.Stat(zipFile)
 	gotrace.Assert(t, err)
-	gotrace.Check(t, info.Name() == zipFile)
+	gotrace.Check(t, info.Name() == filepath.Base(zipFile))
 	gotrace.Check(t, info.Size() > 0)
 	err = os.RemoveAll(root)
 	gotrace.Assert(t, err)
@@ -44,12 +43,12 @@ func makeZip(t *testing.T) string {
 }
 
 func TestZip(t *testing.T) {
-	zipFile := makeZip(t)
-	err := os.RemoveAll(zipFile)
-	gotrace.Assert(t, err)
+	defer gotrace.RemoveTestFolder(t)
+	makeZip(t)
 }
 
 func TestUnzip(t *testing.T) {
+	defer gotrace.RemoveTestFolder(t)
 	zipFile := makeZip(t)
 	dst, err := Unzip(zipFile)
 	gotrace.Assert(t, err)
@@ -59,10 +58,6 @@ func TestUnzip(t *testing.T) {
 	gotrace.Assert(t, err)
 	gotrace.Check(t, dst1 == dst+".0")
 	gotrace.Check(t, dst2 == dst+".1")
-	err = os.RemoveAll(dst1)
-	gotrace.Assert(t, err)
-	err = os.RemoveAll(dst2)
-	gotrace.Assert(t, err)
 	num := 0
 	found := 0
 	filepath.Walk(dst, func(path string, info os.FileInfo, err error) error {
@@ -80,8 +75,4 @@ func TestUnzip(t *testing.T) {
 	})
 	gotrace.Check(t, num == 4)
 	gotrace.Check(t, found == 2)
-	err = os.RemoveAll(zipFile)
-	gotrace.Assert(t, err)
-	err = os.RemoveAll(dst)
-	gotrace.Assert(t, err)
 }
