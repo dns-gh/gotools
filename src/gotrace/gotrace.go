@@ -76,5 +76,7 @@ func GetTestFolder() string {
 
 // RemoveTestFolder removes the hardcoded test folder
 func RemoveTestFolder(t *testing.T) {
-	Assert(t, os.RemoveAll(GetTestFolder()))
+	if !t.Failed() {
+		Assert(t, os.RemoveAll(GetTestFolder()))
+	}
 }
