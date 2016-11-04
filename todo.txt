@@ -1,6 +1,6 @@
 -- TOOLS --
 - tool to add copyrights automatically (when there is none) to code files (checks timestamp and add the name of the author given in argument)
-- email tool to send simple emails from A to B with simply text data and/or zip attachments
+- email tool to send simple emails from A to B with simply text data or any attachments (zip, images,...)
 - add password protection to zip/unzip
 - hacking tools:
 	* add http request tool to brute force some standard login page
@@ -8,6 +8,8 @@
 	* record every input made (keyboard and mouse)
 - image sorter tool:
 	* tool to put in order (into the right folders) image files (timestamped in a way by their name) from a given folder
+- tool to merge pdf files
+- tool to convert images to pdf files
 
 -- PACKAGES --
 - package to walk recursively through directories in lexicographical order or not, applying operand on directories or not
