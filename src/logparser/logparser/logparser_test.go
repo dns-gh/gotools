@@ -43,15 +43,15 @@ func checkFloat64(lhs, rhs float64) {
 func TestLogParser(t *testing.T) {
 	path := "../../../testdata/logdata/test.log"
 	lines, err := FileToLines(path)
-	Check(err)
+	check(err)
 	checkBool(lines[0] == string("message test 1 [[1234]]"))
 	checkStrings(lines[1], string("message test 2 [[12.34]]"))
 	value, err := GetStringValue("[[", "]]", "Test Line [[1234]]")
-	Check(err)
+	check(err)
 	checkStrings(value, string("1234"))
 
 	m, err := GetMapValues(path)
-	Check(err)
+	check(err)
 	expectedString := []string{"1234", "12.34"}
 	expectedInt := []float64{1234, 12.34}
 	var index = 0
