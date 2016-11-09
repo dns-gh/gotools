@@ -26,11 +26,7 @@ Feel free to give ideas and help me in this effort! :)
 
 ### packages
 
-[gotrace package](src/gotrace/gotrace.go)
-
-[flagsconfig package](src/flagsconfig/README.md)
-
-[tojson package](src/tojson/README.md)
+[all moved to their own repositories]
 
 ## LICENSE
 
