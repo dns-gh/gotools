@@ -19,28 +19,9 @@ const (
 	nasaAsteroidsAPIGet = "https://api.nasa.gov/neo/rest/v1/feed?api_key="
 	timeFormat          = "2006-01-02"
 	orbitingBodyToWatch = "Earth"
+	timeInterval        = 0 // 0 meaning you get the current day info,...
+	updateFrequency     = 24 * time.Hour
 )
-
-func sort(tab []int64, left int, right int) {
-	if left >= right {
-		return
-	}
-	pivot := tab[left]
-	i := left + 1
-	for j := left; j <= right; j++ {
-		if pivot > tab[j] {
-			tab[i], tab[j] = tab[j], tab[i]
-			i++
-		}
-	}
-	tab[left], tab[i-1] = tab[i-1], pivot
-	sort(tab, left, i-2)
-	sort(tab, i, right)
-}
-
-func quickSort(values []int64) {
-	sort(values, 0, len(values)-1)
-}
 
 func fetchRocks(days int) (*SpaceRocks, error) {
 	if days > 7 {
@@ -62,14 +43,14 @@ func fetchRocks(days int) (*SpaceRocks, error) {
 	return spacerocks, nil
 }
 
-func parseTime(date string) (time.Time, error) {
-	return time.Parse(timeFormat, date)
-}
-
-func filterRocks(spacerocks *SpaceRocks) ([]object, error) {
+func getDangerousRocks() ([]object, error) {
+	rocks, err := fetchRocks(timeInterval)
+	if err != nil {
+		return nil, err
+	}
 	dangerous := map[int64]object{}
 	keys := []int64{}
-	for _, v := range spacerocks.NearEarthObjects {
+	for _, v := range rocks.NearEarthObjects {
 		if len(v) != 0 {
 			for _, object := range v {
 				if object.IsPotentiallyHazardousAsteroid {
@@ -95,22 +76,22 @@ func filterRocks(spacerocks *SpaceRocks) ([]object, error) {
 	return objects, nil
 }
 
-func main() {
-	spacerocks, err := fetchRocks(7)
+func checkNasaRocks() error {
+	current, err := getDangerousRocks()
 	if err != nil {
-		log.Fatalln(err.Error())
+		return err
 	}
-	objects, err := filterRocks(spacerocks)
+	diff, err := update(current)
 	if err != nil {
-		log.Fatalln(err.Error())
+		return err
 	}
 	fmt.Println("+--------------------------------------------------------------+")
 	fmt.Println("|               Potential dangerous incoming rocks             |")
 	fmt.Println("+--------------------------------------------------------------+")
-	for _, object := range objects {
+	for _, object := range diff {
 		t, err := parseTime(object.CloseApproachData[0].CloseApproachDate)
 		if err != nil {
-			log.Fatalln(err.Error())
+			return err
 		}
 		fmt.Printf("| Diameter [%.2f to %.2f] km / coming near %s on %d-%02d-%02d |\n",
 			object.EstimatedDiameter.Kilometers.EstimatedDiameterMin,
@@ -119,4 +100,31 @@ func main() {
 			t.Year(), t.Month(), t.Day())
 	}
 	fmt.Println("+--------------------------------------------------------------+")
+	return nil
+}
+
+func runBot() error {
+	// check one time before launching the ticker
+	// since the ticker begins to tick the first
+	// time after the given update frequency.
+	err := checkNasaRocks()
+	if err != nil {
+		return err
+	}
+	ticker := time.NewTicker(updateFrequency)
+	defer ticker.Stop()
+	for _ = range ticker.C {
+		err := checkNasaRocks()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func main() {
+	err := runBot()
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
 }

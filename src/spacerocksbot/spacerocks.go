@@ -1,5 +1,11 @@
 package main
 
+import (
+	"os"
+
+	"github.com/dns-gh/tojson"
+)
+
 type links struct {
 	Next string `json:"next"`
 	Prev string `json:"prev"`
@@ -58,4 +64,49 @@ type SpaceRocks struct {
 	ElementCount int   `json:"element_count"`
 	// the key of the NearEarthObjects map represents a date with the following format YYYY-MM-DD
 	NearEarthObjects map[string][]object `json:"near_earth_objects"`
+}
+
+func load() ([]object, error) {
+	objects := &[]object{}
+	if _, err := os.Stat("rocks.json"); os.IsNotExist(err) {
+		save(*objects)
+	}
+	err := tojson.Load("rocks.json", objects)
+	if err != nil {
+		return nil, err
+	}
+	return *objects, nil
+}
+
+func save(objects []object) {
+	tojson.Save("rocks.json", &objects)
+}
+
+func merge(previous, current []object) ([]object, []object) {
+	merged := []object{}
+	diff := []object{}
+	added := map[string]struct{}{}
+	for _, v := range previous {
+		added[v.NeoReferenceID] = struct{}{}
+		merged = append(merged, v)
+	}
+	for _, v := range current {
+		if _, ok := added[v.NeoReferenceID]; ok {
+			continue
+		}
+		added[v.NeoReferenceID] = struct{}{}
+		merged = append(merged, v)
+		diff = append(diff, v)
+	}
+	return merged, diff
+}
+
+func update(current []object) ([]object, error) {
+	previous, err := load()
+	if err != nil {
+		return nil, err
+	}
+	merged, diff := merge(previous, current)
+	save(merged)
+	return diff, nil
 }
