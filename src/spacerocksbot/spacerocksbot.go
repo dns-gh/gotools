@@ -27,6 +27,16 @@ const (
 	fetchMaxSizeError   = "cannot fetch infos for more than 7 days in one request"
 )
 
+var (
+	apiKey = "DEMO_KEY"
+)
+
+func init() {
+	key := os.Getenv("NASA_API_KEY")
+	if key != "" {
+		apiKey = key
+	}
+}
 func fetchRocks(days int) (*SpaceRocks, error) {
 	if days > 7 {
 		return nil, fmt.Errorf(fetchMaxSizeError)
@@ -44,7 +54,7 @@ func fetchRocks(days int) (*SpaceRocks, error) {
 		end = now.Format(timeFormat)
 	}
 	url := nasaAsteroidsAPIGet +
-		os.Getenv("NASA_API_KEY") +
+		apiKey +
 		"&start_date=" + start +
 		"&end_date=" + end
 	resp, err := http.Get(url)
@@ -138,7 +148,7 @@ func runBot(interval int) error {
 }
 
 func main() {
-	interval := flag.Int("offset", timeInterval, "when fetching data for the first time, fetches data in [now, offset] if offset > 0, [offset, now] otherwise")
+	interval := flag.Int("offset", timeInterval, "(offset in days) when fetching data for the first time, fetches data in [now, offset] if offset > 0, [offset, now] otherwise")
 	_, err := conf.NewConfig("nasa.config")
 	if err != nil {
 		log.Fatalln(err.Error())
