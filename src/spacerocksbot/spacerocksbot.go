@@ -8,11 +8,14 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	conf "github.com/dns-gh/flagsconfig"
 )
 
 const (
@@ -20,18 +23,30 @@ const (
 	timeFormat          = "2006-01-02"
 	orbitingBodyToWatch = "Earth"
 	timeInterval        = 0 // 0 meaning you get the current day info,...
-	updateFrequency     = 24 * time.Hour
+	updateFrequency     = 5 * time.Second
+	fetchMaxSizeError   = "cannot fetch infos for more than 7 days in one request"
 )
 
 func fetchRocks(days int) (*SpaceRocks, error) {
 	if days > 7 {
-		return nil, fmt.Errorf("cannot fetch infos for more than 7 days in one request")
+		return nil, fmt.Errorf(fetchMaxSizeError)
+	} else if days < -7 {
+		return nil, fmt.Errorf(fetchMaxSizeError)
 	}
 	now := time.Now()
+	start := ""
+	end := ""
+	if days >= 0 {
+		start = now.Format(timeFormat)
+		end = now.AddDate(0, 0, days).Format(timeFormat)
+	} else {
+		start = now.AddDate(0, 0, days).Format(timeFormat)
+		end = now.Format(timeFormat)
+	}
 	url := nasaAsteroidsAPIGet +
 		os.Getenv("NASA_API_KEY") +
-		"&start_date=" + now.Format(timeFormat) +
-		"&end_date=" + now.AddDate(0, 0, days).Format(timeFormat)
+		"&start_date=" + start +
+		"&end_date=" + end
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -43,8 +58,8 @@ func fetchRocks(days int) (*SpaceRocks, error) {
 	return spacerocks, nil
 }
 
-func getDangerousRocks() ([]object, error) {
-	rocks, err := fetchRocks(timeInterval)
+func getDangerousRocks(interval int) ([]object, error) {
+	rocks, err := fetchRocks(interval)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +91,8 @@ func getDangerousRocks() ([]object, error) {
 	return objects, nil
 }
 
-func checkNasaRocks() error {
-	current, err := getDangerousRocks()
+func checkNasaRocks(interval int) error {
+	current, err := getDangerousRocks(interval)
 	if err != nil {
 		return err
 	}
@@ -103,18 +118,18 @@ func checkNasaRocks() error {
 	return nil
 }
 
-func runBot() error {
+func runBot(interval int) error {
 	// check one time before launching the ticker
 	// since the ticker begins to tick the first
 	// time after the given update frequency.
-	err := checkNasaRocks()
+	err := checkNasaRocks(interval)
 	if err != nil {
 		return err
 	}
 	ticker := time.NewTicker(updateFrequency)
 	defer ticker.Stop()
 	for _ = range ticker.C {
-		err := checkNasaRocks()
+		err := checkNasaRocks(timeInterval)
 		if err != nil {
 			return err
 		}
@@ -123,7 +138,12 @@ func runBot() error {
 }
 
 func main() {
-	err := runBot()
+	interval := flag.Int("offset", timeInterval, "when fetching data for the first time, fetches data in [now, offset] if offset > 0, [offset, now] otherwise")
+	_, err := conf.NewConfig("nasa.config")
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+	err = runBot(*interval)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
