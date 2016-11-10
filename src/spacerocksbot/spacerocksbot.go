@@ -7,12 +7,9 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -63,100 +60,16 @@ func init() {
 	anaconda.SetConsumerSecret(twitterConsumerSecret)
 	twitterAPI = anaconda.NewTwitterApi(twitterAccessToken, twitterAccessSecret)
 }
-func fetchRocks(days int) (*SpaceRocks, error) {
-	if days > 7 {
-		return nil, fmt.Errorf(fetchMaxSizeError)
-	} else if days < -7 {
-		return nil, fmt.Errorf(fetchMaxSizeError)
-	}
-	now := time.Now()
-	start := ""
-	end := ""
-	if days >= 0 {
-		start = now.Format(timeFormat)
-		end = now.AddDate(0, 0, days).Format(timeFormat)
-	} else {
-		start = now.AddDate(0, 0, days).Format(timeFormat)
-		end = now.Format(timeFormat)
-	}
-	url := nasaAsteroidsAPIGet +
-		nasaAPIKey +
-		"&start_date=" + start +
-		"&end_date=" + end
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Fatalln(err.Error())
-	}
-	defer resp.Body.Close()
 
-	spacerocks := &SpaceRocks{}
-	json.NewDecoder(resp.Body).Decode(spacerocks)
-	return spacerocks, nil
-}
-
-func getDangerousRocks(interval int) ([]object, error) {
-	rocks, err := fetchRocks(interval)
-	if err != nil {
-		return nil, err
-	}
-	dangerous := map[int64]object{}
-	keys := []int64{}
-	for _, v := range rocks.NearEarthObjects {
-		if len(v) != 0 {
-			for _, object := range v {
-				if object.IsPotentiallyHazardousAsteroid {
-					if len(object.CloseApproachData) != 0 &&
-						object.CloseApproachData[0].OrbitingBody == orbitingBodyToWatch {
-						t, err := parseTime(object.CloseApproachData[0].CloseApproachDate)
-						if err != nil {
-							return nil, err
-						}
-						timestamp := t.UnixNano()
-						dangerous[timestamp] = object
-						keys = append(keys, timestamp)
-					}
-				}
-			}
-		}
-	}
-	quickSort(keys)
-	objects := []object{}
-	for _, key := range keys {
-		objects = append(objects, dangerous[key])
-	}
-	return objects, nil
-}
-
-func checkNasaRocks(interval int) error {
-	current, err := getDangerousRocks(interval)
+func updateBot(interval int) error {
+	err := checkNasaRocks(interval)
 	if err != nil {
 		return err
 	}
-	diff, err := update(current)
+	err = checkRetweet()
 	if err != nil {
 		return err
 	}
-	fmt.Println("+--------------------------------------------------------------+")
-	fmt.Println("|               Potential dangerous incoming rocks             |")
-	fmt.Println("+--------------------------------------------------------------+")
-	for _, object := range diff {
-		t, err := parseTime(object.CloseApproachData[0].CloseApproachDate)
-		if err != nil {
-			return err
-		}
-		statusMsg := fmt.Sprintf("a dangerous asteroid of Ø %.2f to %.2f km is coming near %s on %d-%02d-%02d \n",
-			object.EstimatedDiameter.Kilometers.EstimatedDiameterMin,
-			object.EstimatedDiameter.Kilometers.EstimatedDiameterMax,
-			orbitingBodyToWatch,
-			t.Year(), t.Month(), t.Day())
-		tw := url.Values{}
-		tweet, err := twitterAPI.PostTweet(statusMsg, tw)
-		if err != nil {
-			log.Println("failed to tweet msg for object id:", object.NeoReferenceID)
-		}
-		log.Println("tweet:", tweet.Text)
-	}
-	fmt.Println("+--------------------------------------------------------------+")
 	return nil
 }
 
@@ -164,14 +77,14 @@ func runBot(interval int) error {
 	// check one time before launching the ticker
 	// since the ticker begins to tick the first
 	// time after the given update frequency.
-	err := checkNasaRocks(interval)
+	err := updateBot(interval)
 	if err != nil {
 		return err
 	}
 	ticker := time.NewTicker(updateFrequency)
 	defer ticker.Stop()
 	for _ = range ticker.C {
-		err := checkNasaRocks(timeInterval)
+		err := updateBot(timeInterval)
 		if err != nil {
 			return err
 		}
@@ -185,6 +98,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
+	fmt.Println("launching nasa space rocks bot...")
 	err = runBot(*interval)
 	if err != nil {
 		log.Fatalln(err.Error())
