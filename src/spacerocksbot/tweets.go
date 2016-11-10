@@ -90,7 +90,8 @@ func checkRetweet() error {
 	for _, tweet := range diff {
 		retweet, err := twitterAPI.Retweet(tweet.Id, false)
 		if err != nil {
-			log.Println("failed to retweet msg for tweet id:", tweet.Id)
+			log.Printf("failed to retweet msg for tweet (id:%d), error: %v\n", tweet.Id, err)
+			continue
 		}
 		log.Println("retweet (id:", tweet.Id, "):", retweet.Text)
 	}
