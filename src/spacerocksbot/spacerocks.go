@@ -195,7 +195,7 @@ func checkNasaRocks(interval int) error {
 		if err != nil {
 			return err
 		}
-		statusMsg := fmt.Sprintf("a dangerous asteroid of Ø %.2f to %.2f km is coming near %s on %d-%02d-%02d \n",
+		statusMsg := fmt.Sprintf("a #dangerous #asteroid of Ø %.2f to %.2f km is coming near #%s on %d-%02d-%02d \n",
 			object.EstimatedDiameter.Kilometers.EstimatedDiameterMin,
 			object.EstimatedDiameter.Kilometers.EstimatedDiameterMax,
 			orbitingBodyToWatch,

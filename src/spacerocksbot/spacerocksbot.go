@@ -23,7 +23,7 @@ const (
 	timeFormat          = "2006-01-02"
 	orbitingBodyToWatch = "Earth"
 	timeInterval        = 0 // 0 meaning you get the current day info,...
-	updateFrequency     = 12 * time.Hour
+	updateFrequency     = 6 * time.Hour
 	fetchMaxSizeError   = "cannot fetch infos for more than 7 days in one request"
 )
 
@@ -98,7 +98,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
-	fmt.Println("launching nasa space rocks bot...")
+	log.Println("launching nasa space rocks bot...")
 	err = runBot(*interval)
 	if err != nil {
 		log.Fatalln(err.Error())
