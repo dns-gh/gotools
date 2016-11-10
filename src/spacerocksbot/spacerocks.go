@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dns-gh/tojson"
@@ -191,19 +192,36 @@ func checkNasaRocks(interval int) error {
 		return err
 	}
 	for _, object := range diff {
-		t, err := parseTime(object.CloseApproachData[0].CloseApproachDate)
+		closeData := object.CloseApproachData[0]
+		t, err := parseTime(closeData.CloseApproachDate)
 		if err != nil {
 			return err
 		}
-		statusMsg := fmt.Sprintf("a #dangerous #asteroid of Ø %.2f to %.2f km is coming near #%s on %d-%02d-%02d \n",
-			object.EstimatedDiameter.Kilometers.EstimatedDiameterMin,
-			object.EstimatedDiameter.Kilometers.EstimatedDiameterMax,
+		// extract lisible name
+		name := object.Name
+		parts := strings.SplitN(object.Name, " ", 2)
+		if len(parts) == 2 {
+			name = parts[1]
+		}
+		// extract lisible speed
+		speed := closeData.RelativeVelocity.KilometersPerSecond
+		parts = strings.Split(speed, ".")
+		if len(parts) == 2 && len(parts[1]) > 2 {
+			speed = parts[0] + "." + parts[1][0:1]
+		}
+		statusMsg := fmt.Sprintf("A #dangerous #asteroid %s, Ø ~%.2f km and ~%s km/s is coming close to #%s on %s. %02d (details here %s)",
+			name,
+			(object.EstimatedDiameter.Kilometers.EstimatedDiameterMin+object.EstimatedDiameter.Kilometers.EstimatedDiameterMax)/2,
+			speed,
 			orbitingBodyToWatch,
-			t.Year(), t.Month(), t.Day())
+			t.Month().String()[0:3],
+			t.Day(),
+			object.NasaJplURL)
 		tw := url.Values{}
 		tweet, err := twitterAPI.PostTweet(statusMsg, tw)
 		if err != nil {
-			log.Println("failed to tweet msg for object id:", object.NeoReferenceID)
+			log.Printf("failed to tweet msg for object (id:%s), error: %v\n", object.NeoReferenceID, err)
+			continue
 		}
 		log.Println("tweet: (id:", object.NeoReferenceID, "):", tweet.Text)
 	}
