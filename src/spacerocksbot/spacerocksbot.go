@@ -12,9 +12,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/ChimeraCoder/anaconda"
 	conf "github.com/dns-gh/flagsconfig"
 )
 
@@ -23,19 +26,42 @@ const (
 	timeFormat          = "2006-01-02"
 	orbitingBodyToWatch = "Earth"
 	timeInterval        = 0 // 0 meaning you get the current day info,...
-	updateFrequency     = 5 * time.Second
+	updateFrequency     = 12 * time.Hour
 	fetchMaxSizeError   = "cannot fetch infos for more than 7 days in one request"
 )
 
 var (
-	apiKey = "DEMO_KEY"
+	envErrorList = []string{}
+	nasaAPIKey   = "DEMO_KEY"
+	twitterAPI   *anaconda.TwitterApi
+)
+
+func getEnv(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		envErrorList = append(envErrorList, fmt.Sprintf("%q is not defined", key))
+	}
+	return value
+}
+
+var (
+	twitterConsumerKey    = getEnv("TWITTER_CONSUMER_KEY")
+	twitterConsumerSecret = getEnv("TWITTER_CONSUMER_SECRET")
+	twitterAccessToken    = getEnv("TWITTER_ACCESS_TOKEN")
+	twitterAccessSecret   = getEnv("TWITTER_ACCESS_SECRET")
 )
 
 func init() {
 	key := os.Getenv("NASA_API_KEY")
 	if key != "" {
-		apiKey = key
+		nasaAPIKey = key
 	}
+	if len(envErrorList) > 0 {
+		log.Fatalln(fmt.Sprintf("errors:\n%s", strings.Join(envErrorList, "\n")))
+	}
+	anaconda.SetConsumerKey(twitterConsumerKey)
+	anaconda.SetConsumerSecret(twitterConsumerSecret)
+	twitterAPI = anaconda.NewTwitterApi(twitterAccessToken, twitterAccessSecret)
 }
 func fetchRocks(days int) (*SpaceRocks, error) {
 	if days > 7 {
@@ -54,7 +80,7 @@ func fetchRocks(days int) (*SpaceRocks, error) {
 		end = now.Format(timeFormat)
 	}
 	url := nasaAsteroidsAPIGet +
-		apiKey +
+		nasaAPIKey +
 		"&start_date=" + start +
 		"&end_date=" + end
 	resp, err := http.Get(url)
@@ -118,11 +144,17 @@ func checkNasaRocks(interval int) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("| Diameter [%.2f to %.2f] km / coming near %s on %d-%02d-%02d |\n",
+		statusMsg := fmt.Sprintf("a dangerous asteroid of Ø %.2f to %.2f km is coming near %s on %d-%02d-%02d \n",
 			object.EstimatedDiameter.Kilometers.EstimatedDiameterMin,
 			object.EstimatedDiameter.Kilometers.EstimatedDiameterMax,
 			orbitingBodyToWatch,
 			t.Year(), t.Month(), t.Day())
+		tw := url.Values{}
+		tweet, err := twitterAPI.PostTweet(statusMsg, tw)
+		if err != nil {
+			log.Println("failed to tweet msg for object id:", object.NeoReferenceID)
+		}
+		log.Println("tweet:", tweet.Text)
 	}
 	fmt.Println("+--------------------------------------------------------------+")
 	return nil
