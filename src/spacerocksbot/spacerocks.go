@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -143,9 +144,16 @@ func fetchRocks(days int) (*SpaceRocks, error) {
 		log.Fatalln(err.Error())
 	}
 	defer resp.Body.Close()
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(string(bytes), "OVER_RATE_LIMIT") {
+		return nil, fmt.Errorf("http get rate limit reached, wait of use a proper key instead of the default one")
+	}
 
 	spacerocks := &SpaceRocks{}
-	json.NewDecoder(resp.Body).Decode(spacerocks)
+	json.Unmarshal(bytes, spacerocks)
 	return spacerocks, nil
 }
 
@@ -209,12 +217,18 @@ func checkNasaRocks(interval int) error {
 		if len(parts) == 2 && len(parts[1]) > 2 {
 			speed = parts[0] + "." + parts[1][0:1]
 		}
+		// extract lisible month
+		month := t.Month().String()
+		if len(month) <= 3 {
+			month = month[0:3]
+		}
+		// build status message
 		statusMsg := fmt.Sprintf("A #dangerous #asteroid %s, Ø ~%.2f km and ~%s km/s is coming close to #%s on %s. %02d (details here %s)",
 			name,
 			(object.EstimatedDiameter.Kilometers.EstimatedDiameterMin+object.EstimatedDiameter.Kilometers.EstimatedDiameterMax)/2,
 			speed,
 			orbitingBodyToWatch,
-			t.Month().String()[0:3],
+			month,
 			t.Day(),
 			object.NasaJplURL)
 		tw := url.Values{}

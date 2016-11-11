@@ -61,35 +61,27 @@ func init() {
 	twitterAPI = anaconda.NewTwitterApi(twitterAccessToken, twitterAccessSecret)
 }
 
-func updateBot(interval int) error {
+func updateBot(interval int) {
 	err := checkNasaRocks(interval)
 	if err != nil {
-		return err
+		log.Println(err.Error())
 	}
 	err = checkRetweet()
 	if err != nil {
-		return err
+		log.Println(err.Error())
 	}
-	return nil
 }
 
-func runBot(interval int) error {
+func runBot(interval int) {
 	// check one time before launching the ticker
 	// since the ticker begins to tick the first
 	// time after the given update frequency.
-	err := updateBot(interval)
-	if err != nil {
-		return err
-	}
+	updateBot(interval)
 	ticker := time.NewTicker(updateFrequency)
 	defer ticker.Stop()
 	for _ = range ticker.C {
-		err := updateBot(timeInterval)
-		if err != nil {
-			return err
-		}
+		updateBot(timeInterval)
 	}
-	return nil
 }
 
 func main() {
@@ -99,8 +91,5 @@ func main() {
 		log.Fatalln(err.Error())
 	}
 	log.Println("launching nasa space rocks bot...")
-	err = runBot(*interval)
-	if err != nil {
-		log.Fatalln(err.Error())
-	}
+	runBot(*interval)
 }
