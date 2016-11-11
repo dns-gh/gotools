@@ -4,6 +4,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"time"
 
 	"net/url"
 
@@ -75,7 +76,7 @@ func updateTweets(path string, current []anaconda.Tweet) ([]anaconda.Tweet, erro
 }
 
 func getRelevantTweets() ([]anaconda.Tweet, error) {
-	query := searchTweetQueries[rand.Intn(len(searchTweetQueries))]
+	query := searchTweetQueries[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(searchTweetQueries))]
 	v := url.Values{}
 	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
 	results, _ := twitterAPI.GetSearch(query, v)
