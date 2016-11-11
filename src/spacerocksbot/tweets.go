@@ -32,8 +32,8 @@ var (
 		"asteroids saturn",
 		"asteroids uranus",
 		"asteroids neptune",
-		"asteroids galaxy",
-		"asteroids galactic",
+		"asteroids around galaxy",
+		"asteroids galactic tour",
 		"asteroids universe",
 		"asteroids space",
 		"asteroids nasa",
@@ -117,6 +117,15 @@ func getRelevantTweets() ([]anaconda.Tweet, error) {
 	return results.Statuses, nil
 }
 
+func like(tweet *anaconda.Tweet) {
+	if tweet.FavoriteCount > maxFavoriteCountWatch {
+		_, err := twitterAPI.Favorite(tweet.Id)
+		if err != nil {
+			log.Printf("failed to likes/favorites tweet (id:%d), error: %v\n", tweet.Id, err)
+		}
+	}
+}
+
 func checkRetweet() error {
 	// TODO some tweet are retweet and hence could be the same on the below list
 	current, err := getRelevantTweets()
@@ -130,17 +139,13 @@ func checkRetweet() error {
 	}
 	for _, tweet := range diff {
 		sleep(maxRandTimeSleepBetweenTweets)
-		if tweet.FavoriteCount > maxFavoriteCountWatch {
-			tweet, err = twitterAPI.Favorite(tweet.Id)
-			if err != nil {
-				log.Printf("failed to likes/favorites tweet (id:%d), error: %v\n", tweet.Id, err)
-			}
-		}
+		like(&tweet)
 		retweet, err := twitterAPI.Retweet(tweet.Id, false)
 		if err != nil {
 			log.Printf("failed to retweet msg for tweet (id:%d), error: %v\n", tweet.Id, err)
 			continue
 		}
+		like(&retweet)
 		log.Printf("retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, retweet.Text)
 	}
 	return nil
