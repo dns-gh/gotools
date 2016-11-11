@@ -121,9 +121,12 @@ func like(tweet *anaconda.Tweet) {
 	if tweet.FavoriteCount > maxFavoriteCountWatch {
 		_, err := twitterAPI.Favorite(tweet.Id)
 		if err != nil {
-			log.Printf("failed to likes/favorites tweet (id:%d), error: %v\n", tweet.Id, trunc(err.Error()))
+			log.Printf("failed to like tweet (id:%d), error: %v\n", tweet.Id, trunc(err.Error()))
 		}
 		log.Printf("liked tweet (id:%d): %s\n", tweet.Id, trunc(tweet.Text))
+	} else if tweet.RetweetedStatus != nil &&
+		tweet.RetweetedStatus.FavoriteCount > maxFavoriteCountWatch {
+		like(tweet.RetweetedStatus)
 	}
 }
 
