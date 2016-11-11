@@ -28,7 +28,8 @@ var (
 		"asteroids watch danger",
 		"asteroids end world",
 	}
-	maxRetweetBySearch = 2
+	maxRetweetBySearch    = 2
+	maxFavoriteCountWatch = 2
 )
 
 // TODO factorize with load, merge and update
@@ -94,12 +95,18 @@ func checkRetweet() error {
 	}
 	for _, tweet := range diff {
 		sleep(maxRandTimeSleepBetweenTweets)
+		if tweet.FavoriteCount > maxFavoriteCountWatch {
+			tweet, err = twitterAPI.Favorite(tweet.Id)
+			if err != nil {
+				log.Printf("failed to likes/favorites tweet (id:%d), error: %v\n", tweet.Id, err)
+			}
+		}
 		retweet, err := twitterAPI.Retweet(tweet.Id, false)
 		if err != nil {
 			log.Printf("failed to retweet msg for tweet (id:%d), error: %v\n", tweet.Id, err)
 			continue
 		}
-		log.Println("retweet (id:", tweet.Id, "):", retweet.Text)
+		log.Printf("retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, retweet.Text)
 	}
 	return nil
 }
