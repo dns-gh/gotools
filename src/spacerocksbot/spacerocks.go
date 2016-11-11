@@ -222,11 +222,12 @@ func checkNasaRocks(interval int) error {
 		}
 		// extract lisible month
 		month := t.Month().String()
-		if len(month) <= 3 {
+		if len(month) >= 3 {
 			month = month[0:3]
 		}
 		// build status message
-		statusMsg := fmt.Sprintf("A #dangerous #asteroid %s, Ø ~%.2f km and ~%s km/s is coming close to #%s on %s. %02d (details here %s)",
+		statusMsg := fmt.Sprintf("A #%s #asteroid %s, Ø ~%.2f km and ~%s km/s is coming close to #%s on %s. %02d (details here %s)",
+			getRandomElement(asteroidsQualificativeAdjective),
 			name,
 			(object.EstimatedDiameter.Kilometers.EstimatedDiameterMin+object.EstimatedDiameter.Kilometers.EstimatedDiameterMax)/2,
 			speed,

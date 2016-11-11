@@ -22,7 +22,7 @@ const (
 	nasaAsteroidsAPIGet = "https://api.nasa.gov/neo/rest/v1/feed?api_key="
 	timeFormat          = "2006-01-02"
 	orbitingBodyToWatch = "Earth"
-	timeInterval        = 0 // 0 meaning you get the current day info,...
+	timeInterval        = 3 // 0 meaning you get the current day info,...
 	updateFrequency     = 2 * time.Hour
 	fetchMaxSizeError   = "cannot fetch infos for more than 7 days in one request"
 )

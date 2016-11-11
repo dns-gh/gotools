@@ -2,9 +2,7 @@ package main
 
 import (
 	"log"
-	"math/rand"
 	"os"
-	"time"
 
 	"net/url"
 
@@ -20,7 +18,7 @@ const (
 )
 
 var (
-	searchTweetQueries = [...]string{
+	searchTweetQueries = []string{
 		"asteroids solar system",
 		"asteroids comets",
 		"asteroids belt",
@@ -52,6 +50,18 @@ var (
 		"asteroids exploitation",
 		"asteroids mining",
 		"asteroid discovery",
+	}
+	asteroidsQualificativeAdjective = []string{
+		"harmless",
+		"nasty",
+		"threatening",
+		"dangerous",
+		"critical",
+		"terrible",
+		"bloody",
+		"destructive",
+		"deadly",
+		"fatal",
 	}
 	maxRetweetBySearch    = 2
 	maxFavoriteCountWatch = 2
@@ -100,7 +110,7 @@ func updateTweets(path string, current []anaconda.Tweet) ([]anaconda.Tweet, erro
 }
 
 func getRelevantTweets() ([]anaconda.Tweet, error) {
-	query := searchTweetQueries[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(searchTweetQueries))]
+	query := getRandomElement(searchTweetQueries)
 	v := url.Values{}
 	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
 	results, _ := twitterAPI.GetSearch(query, v)

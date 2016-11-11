@@ -36,3 +36,7 @@ func sleep(amount int) {
 	log.Printf("random sleep: %+v seconds\n", random)
 	time.Sleep(time.Second * time.Duration(random))
 }
+
+func getRandomElement(tab []string) string {
+	return tab[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(tab))]
+}
