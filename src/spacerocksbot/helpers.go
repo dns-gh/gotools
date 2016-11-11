@@ -40,3 +40,12 @@ func sleep(amount int) {
 func getRandomElement(tab []string) string {
 	return tab[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(tab))]
 }
+
+func trunc(text string) string {
+	length := len(text)
+	maxLength := 90
+	if length > maxLength {
+		length = maxLength
+	}
+	return text[0:length]
+}

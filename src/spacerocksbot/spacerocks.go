@@ -238,10 +238,10 @@ func checkNasaRocks(interval int) error {
 		tw := url.Values{}
 		tweet, err := twitterAPI.PostTweet(statusMsg, tw)
 		if err != nil {
-			log.Printf("failed to tweet msg for object (id:%s), error: %v\n", object.NeoReferenceID, err)
+			log.Printf("failed to tweet for object (id:%s), error: %v\n", object.NeoReferenceID, err)
 			continue
 		}
-		log.Println("tweet: (id:", object.NeoReferenceID, "):", tweet.Text)
+		log.Println("tweet: (id:", object.NeoReferenceID, "):", trunc(tweet.Text))
 	}
 	return nil
 }

@@ -121,8 +121,9 @@ func like(tweet *anaconda.Tweet) {
 	if tweet.FavoriteCount > maxFavoriteCountWatch {
 		_, err := twitterAPI.Favorite(tweet.Id)
 		if err != nil {
-			log.Printf("failed to likes/favorites tweet (id:%d), error: %v\n", tweet.Id, err)
+			log.Printf("failed to likes/favorites tweet (id:%d), error: %v\n", tweet.Id, trunc(err.Error()))
 		}
+		log.Printf("liked tweet (id:%d): %s\n", tweet.Id, trunc(tweet.Text))
 	}
 }
 
@@ -142,11 +143,11 @@ func checkRetweet() error {
 		like(&tweet)
 		retweet, err := twitterAPI.Retweet(tweet.Id, false)
 		if err != nil {
-			log.Printf("failed to retweet msg for tweet (id:%d), error: %v\n", tweet.Id, err)
+			log.Printf("failed to retweet tweet (id:%d), error: %v\n", tweet.Id, err)
 			continue
 		}
 		like(&retweet)
-		log.Printf("retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, retweet.Text)
+		log.Printf("retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, trunc(retweet.Text))
 	}
 	return nil
 }
