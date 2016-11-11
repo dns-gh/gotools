@@ -24,8 +24,10 @@ var (
 		"asteroids space",
 		"asteroids nasa",
 		"asteroids deadly",
+		"asteroids watch danger",
+		"asteroids end world",
 	}
-	maxRetweetBySearch = 3
+	maxRetweetBySearch = 2
 )
 
 // TODO factorize with load, merge and update
