@@ -21,13 +21,37 @@ const (
 
 var (
 	searchTweetQueries = [...]string{
+		"asteroids solar system",
+		"asteroids comets",
+		"asteroids belt",
+		"asteroids ceres",
+		"asteroids orbit",
+		"asteroids mercury",
+		"asteroids venus",
 		"asteroids earth",
 		"asteroids mars",
+		"asteroids jupiter",
+		"asteroids saturn",
+		"asteroids uranus",
+		"asteroids neptune",
+		"asteroids galaxy",
+		"asteroids galactic",
+		"asteroids universe",
 		"asteroids space",
 		"asteroids nasa",
 		"asteroids deadly",
 		"asteroids watch danger",
 		"asteroids end world",
+		"Near-Earth Object Program",
+		"asteroids close approach",
+		"asteroids strike",
+		"asteroids damages on earth",
+		"asteroid impact simulation",
+		"asteroid impact",
+		"asteroids threat",
+		"asteroids exploitation",
+		"asteroids mining",
+		"asteroid discovery",
 	}
 	maxRetweetBySearch    = 2
 	maxFavoriteCountWatch = 2

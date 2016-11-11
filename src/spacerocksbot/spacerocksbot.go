@@ -23,7 +23,7 @@ const (
 	timeFormat          = "2006-01-02"
 	orbitingBodyToWatch = "Earth"
 	timeInterval        = 0 // 0 meaning you get the current day info,...
-	updateFrequency     = 6 * time.Hour
+	updateFrequency     = 2 * time.Hour
 	fetchMaxSizeError   = "cannot fetch infos for more than 7 days in one request"
 )
 
@@ -31,7 +31,7 @@ var (
 	envErrorList                  = []string{}
 	nasaAPIKey                    = "DEMO_KEY"
 	twitterAPI                    *anaconda.TwitterApi
-	maxRandTimeSleepBetweenTweets = 600 // seconds
+	maxRandTimeSleepBetweenTweets = 120 // seconds
 )
 
 func getEnv(key string) string {
