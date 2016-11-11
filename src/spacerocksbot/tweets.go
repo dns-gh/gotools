@@ -90,6 +90,7 @@ func checkRetweet() error {
 		return err
 	}
 	for _, tweet := range diff {
+		sleep(maxRandTimeSleepBetweenTweets)
 		retweet, err := twitterAPI.Retweet(tweet.Id, false)
 		if err != nil {
 			log.Printf("failed to retweet msg for tweet (id:%d), error: %v\n", tweet.Id, err)

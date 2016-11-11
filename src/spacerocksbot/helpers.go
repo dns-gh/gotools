@@ -1,6 +1,10 @@
 package main
 
-import "time"
+import (
+	"log"
+	"math/rand"
+	"time"
+)
 
 func sort(tab []int64, left int, right int) {
 	if left >= right {
@@ -25,4 +29,10 @@ func quickSort(values []int64) {
 
 func parseTime(date string) (time.Time, error) {
 	return time.Parse(timeFormat, date)
+}
+
+func sleep(amount int) {
+	random := rand.Intn(amount)
+	log.Printf("random sleep: %+v seconds\n", random)
+	time.Sleep(time.Second * time.Duration(random))
 }

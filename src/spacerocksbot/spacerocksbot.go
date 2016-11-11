@@ -28,9 +28,10 @@ const (
 )
 
 var (
-	envErrorList = []string{}
-	nasaAPIKey   = "DEMO_KEY"
-	twitterAPI   *anaconda.TwitterApi
+	envErrorList                  = []string{}
+	nasaAPIKey                    = "DEMO_KEY"
+	twitterAPI                    *anaconda.TwitterApi
+	maxRandTimeSleepBetweenTweets = 600 // seconds
 )
 
 func getEnv(key string) string {

@@ -200,6 +200,7 @@ func checkNasaRocks(interval int) error {
 		return err
 	}
 	for _, object := range diff {
+		sleep(maxRandTimeSleepBetweenTweets)
 		closeData := object.CloseApproachData[0]
 		t, err := parseTime(closeData.CloseApproachDate)
 		if err != nil {
