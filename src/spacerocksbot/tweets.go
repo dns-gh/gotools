@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	// TODO save only relevant information on tweets, the file coudl become too large at some point otherwise
 	tweetsFilePath = "tweets.json"
 )
 
@@ -81,10 +82,12 @@ func getRelevantTweets() ([]anaconda.Tweet, error) {
 }
 
 func checkRetweet() error {
+	// TODO some tweet are retweet and hence could be the same on the below list
 	current, err := getRelevantTweets()
 	if err != nil {
 		return err
 	}
+	// TODO only merge and save tweets once they are retweeted ?
 	diff, err := updateTweets(tweetsFilePath, current)
 	if err != nil {
 		return err

@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	// TODO save only relevant information on asteroids, the file coudl become too large at some point otherwise
 	rocksFilePath = "rocks.json"
 )
 
@@ -195,6 +196,7 @@ func checkNasaRocks(interval int) error {
 	if err != nil {
 		return err
 	}
+	// TODO only merge and save asteroids once they are tweeted ?
 	diff, err := update(rocksFilePath, current)
 	if err != nil {
 		return err
