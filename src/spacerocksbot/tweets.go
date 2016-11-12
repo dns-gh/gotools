@@ -19,6 +19,9 @@ const (
 
 var (
 	searchTweetQueries = []string{
+		"nasa mars",
+		"nasa simulation",
+		"nasa flight",
 		"asteroids solar system",
 		"asteroids comets",
 		"asteroids belt",
@@ -121,7 +124,7 @@ func like(tweet *anaconda.Tweet) {
 	if tweet.FavoriteCount > maxFavoriteCountWatch {
 		_, err := twitterAPI.Favorite(tweet.Id)
 		if err != nil {
-			log.Printf("failed to like tweet (id:%d), error: %v\n", tweet.Id, trunc(err.Error()))
+			log.Printf("failed to like tweet (id:%d), error: %v\n", tweet.Id, err)
 		}
 		log.Printf("liked tweet (id:%d): %s\n", tweet.Id, trunc(tweet.Text))
 	} else if tweet.RetweetedStatus != nil &&
@@ -131,16 +134,19 @@ func like(tweet *anaconda.Tweet) {
 }
 
 func checkRetweet() error {
+	log.Println("checking tweets to retweet...")
 	// TODO some tweet are retweet and hence could be the same on the below list
 	current, err := getRelevantTweets()
 	if err != nil {
 		return err
 	}
+	log.Println("found", len(current), "potential tweet to retweet")
 	// TODO only merge and save tweets once they are retweeted ?
 	diff, err := updateTweets(tweetsFilePath, current)
 	if err != nil {
 		return err
 	}
+	log.Println("retweeting", len(diff), "tweets...")
 	for _, tweet := range diff {
 		sleep(maxRandTimeSleepBetweenTweets)
 		like(&tweet)

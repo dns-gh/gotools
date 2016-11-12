@@ -63,6 +63,7 @@ func init() {
 }
 
 func updateBot(interval int) {
+	log.Println("updating bot...")
 	err := checkNasaRocks(interval)
 	if err != nil {
 		log.Println(err.Error())
@@ -71,6 +72,7 @@ func updateBot(interval int) {
 	if err != nil {
 		log.Println(err.Error())
 	}
+	log.Println("update bot finished")
 }
 
 func runBot(interval int) {

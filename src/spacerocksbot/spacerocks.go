@@ -192,15 +192,18 @@ func getDangerousRocks(interval int) ([]object, error) {
 }
 
 func checkNasaRocks(interval int) error {
+	log.Println("checking nasa rocks...")
 	current, err := getDangerousRocks(interval)
 	if err != nil {
 		return err
 	}
+	log.Println("found", len(current), "potential rocks to tweet")
 	// TODO only merge and save asteroids once they are tweeted ?
 	diff, err := update(rocksFilePath, current)
 	if err != nil {
 		return err
 	}
+	log.Println("tweeting", len(diff), "rocks...")
 	for _, object := range diff {
 		sleep(maxRandTimeSleepBetweenTweets)
 		closeData := object.CloseApproachData[0]
