@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"math/rand"
+	"strconv"
 	"time"
 )
 
@@ -27,8 +28,28 @@ func quickSort(values []int64) {
 	sort(values, 0, len(values)-1)
 }
 
-func parseTime(date string) (time.Time, error) {
-	return time.Parse(timeFormat, date)
+func parseInt(value string) int {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return parsed
+}
+
+func parseTime(value string, timeFormat string) time.Time {
+	parsed, err := time.Parse(timeFormat, value)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return parsed
+}
+
+func parseDuration(value string) time.Duration {
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return parsed
 }
 
 func sleep(amount int) {

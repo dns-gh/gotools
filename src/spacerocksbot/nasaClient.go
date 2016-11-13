@@ -6,18 +6,40 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	conf "github.com/dns-gh/flagsconfig"
 	"github.com/dns-gh/tojson"
 )
 
-const (
-	// TODO save only relevant information on asteroids, the file coudl become too large at some point otherwise
-	rocksFilePath = "rocks.json"
-)
+type nasaClient struct {
+	apiKey      string
+	firstOffset int
+	offset      int
+	poll        time.Duration
+	path        string
+	body        string // orbiting body to watch
+}
+
+func (n *nasaClient) hasDefaultKey() bool {
+	return n.apiKey == nasaAPIDefaultKey
+}
+
+func makeNasaClient(config *conf.Config) *nasaClient {
+	apiKey := os.Getenv("NASA_API_KEY")
+	if len(apiKey) == 0 {
+		apiKey = nasaAPIDefaultKey
+	}
+	return &nasaClient{
+		apiKey:      apiKey,
+		firstOffset: parseInt(config.Get(firstOffsetFlag)),
+		offset:      parseInt(config.Get(offsetFlag)),
+		poll:        parseDuration(config.Get(pollFrequencyFlag)),
+		path:        config.Get(nasaPathFlag),
+	}
+}
 
 type links struct {
 	Next string `json:"next"`
@@ -79,12 +101,12 @@ type SpaceRocks struct {
 	NearEarthObjects map[string][]object `json:"near_earth_objects"`
 }
 
-func load(path string) ([]object, error) {
+func (n *nasaClient) load() ([]object, error) {
 	objects := &[]object{}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		tojson.Save(path, objects)
+	if _, err := os.Stat(n.path); os.IsNotExist(err) {
+		tojson.Save(n.path, objects)
 	}
-	err := tojson.Load(path, objects)
+	err := tojson.Load(n.path, objects)
 	if err != nil {
 		return nil, err
 	}
@@ -110,17 +132,17 @@ func merge(previous, current []object) ([]object, []object) {
 	return merged, diff
 }
 
-func update(path string, current []object) ([]object, error) {
-	previous, err := load(path)
+func (n *nasaClient) update(current []object) ([]object, error) {
+	previous, err := n.load()
 	if err != nil {
 		return nil, err
 	}
 	merged, diff := merge(previous, current)
-	tojson.Save(path, merged)
+	tojson.Save(n.path, merged)
 	return diff, nil
 }
 
-func fetchRocks(days int) (*SpaceRocks, error) {
+func (n *nasaClient) fetchRocks(days int) (*SpaceRocks, error) {
 	if days > 7 {
 		return nil, fmt.Errorf(fetchMaxSizeError)
 	} else if days < -7 {
@@ -130,14 +152,14 @@ func fetchRocks(days int) (*SpaceRocks, error) {
 	start := ""
 	end := ""
 	if days >= 0 {
-		start = now.Format(timeFormat)
-		end = now.AddDate(0, 0, days).Format(timeFormat)
+		start = now.Format(nasaTimeFormat)
+		end = now.AddDate(0, 0, days).Format(nasaTimeFormat)
 	} else {
-		start = now.AddDate(0, 0, days).Format(timeFormat)
-		end = now.Format(timeFormat)
+		start = now.AddDate(0, 0, days).Format(nasaTimeFormat)
+		end = now.Format(nasaTimeFormat)
 	}
 	url := nasaAsteroidsAPIGet +
-		nasaAPIKey +
+		n.apiKey +
 		"&start_date=" + start +
 		"&end_date=" + end
 	resp, err := http.Get(url)
@@ -158,8 +180,8 @@ func fetchRocks(days int) (*SpaceRocks, error) {
 	return spacerocks, nil
 }
 
-func getDangerousRocks(interval int) ([]object, error) {
-	rocks, err := fetchRocks(interval)
+func (n *nasaClient) getDangerousRocks(offset int) ([]object, error) {
+	rocks, err := n.fetchRocks(offset)
 	if err != nil {
 		return nil, err
 	}
@@ -170,11 +192,8 @@ func getDangerousRocks(interval int) ([]object, error) {
 			for _, object := range v {
 				if object.IsPotentiallyHazardousAsteroid {
 					if len(object.CloseApproachData) != 0 &&
-						object.CloseApproachData[0].OrbitingBody == orbitingBodyToWatch {
-						t, err := parseTime(object.CloseApproachData[0].CloseApproachDate)
-						if err != nil {
-							return nil, err
-						}
+						object.CloseApproachData[0].OrbitingBody == n.body {
+						t := parseTime(object.CloseApproachData[0].CloseApproachDate, nasaTimeFormat)
 						timestamp := t.UnixNano()
 						dangerous[timestamp] = object
 						keys = append(keys, timestamp)
@@ -191,26 +210,23 @@ func getDangerousRocks(interval int) ([]object, error) {
 	return objects, nil
 }
 
-func checkNasaRocks(interval int) error {
+func (n *nasaClient) fetch(offset int) ([]string, error) {
 	log.Println("checking nasa rocks...")
-	current, err := getDangerousRocks(interval)
+	current, err := n.getDangerousRocks(offset)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	log.Println("found", len(current), "potential rocks to tweet")
 	// TODO only merge and save asteroids once they are tweeted ?
-	diff, err := update(rocksFilePath, current)
+	diff, err := n.update(current)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	log.Println("tweeting", len(diff), "rocks...")
+	formatedDiff := []string{}
 	for _, object := range diff {
 		sleep(maxRandTimeSleepBetweenTweets)
 		closeData := object.CloseApproachData[0]
-		t, err := parseTime(closeData.CloseApproachDate)
-		if err != nil {
-			return err
-		}
+		approachDate := parseTime(closeData.CloseApproachDate, nasaTimeFormat)
 		// extract lisible name
 		name := object.Name
 		parts := strings.SplitN(object.Name, " ", 2)
@@ -224,7 +240,7 @@ func checkNasaRocks(interval int) error {
 			speed = parts[0] + "." + parts[1][0:1]
 		}
 		// extract lisible month
-		month := t.Month().String()
+		month := approachDate.Month().String()
 		if len(month) >= 3 {
 			month = month[0:3]
 		}
@@ -234,17 +250,11 @@ func checkNasaRocks(interval int) error {
 			name,
 			(object.EstimatedDiameter.Kilometers.EstimatedDiameterMin+object.EstimatedDiameter.Kilometers.EstimatedDiameterMax)/2,
 			speed,
-			orbitingBodyToWatch,
+			n.body,
 			month,
-			t.Day(),
+			approachDate.Day(),
 			object.NasaJplURL)
-		tw := url.Values{}
-		tweet, err := twitterAPI.PostTweet(statusMsg, tw)
-		if err != nil {
-			log.Printf("failed to tweet for object (id:%s), error: %v\n", object.NeoReferenceID, err)
-			continue
-		}
-		log.Println("tweet: (id:", object.NeoReferenceID, "):", trunc(tweet.Text))
+		formatedDiff = append(formatedDiff, statusMsg)
 	}
-	return nil
+	return formatedDiff, nil
 }
