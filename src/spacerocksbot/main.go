@@ -37,7 +37,9 @@ const (
 const (
 	updateFlag = "update"
 	// TODO save only relevant information on tweets, the file coudl become too large at some point otherwise
-	twitterPathFlag = "twitter-path"
+	twitterPathFlag  = "twitter-path"
+	retweetTextTag   = "RT @"
+	retweetTextIndex = ": "
 )
 
 var (

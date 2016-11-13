@@ -28,6 +28,14 @@ func quickSort(values []int64) {
 	sort(values, 0, len(values)-1)
 }
 
+func parseBool(value string) bool {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return parsed
+}
+
 func parseInt(value string) int {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
@@ -52,14 +60,18 @@ func parseDuration(value string) time.Duration {
 	return parsed
 }
 
-func sleep(amount int) {
-	random := rand.Intn(amount)
+func getRandom(size int) int {
+	return rand.New(rand.NewSource(time.Now().UnixNano())).Intn(size)
+}
+
+func sleep(size int) {
+	random := getRandom(size)
 	log.Printf("random sleep: %+v seconds\n", random)
 	time.Sleep(time.Second * time.Duration(random))
 }
 
 func getRandomElement(tab []string) string {
-	return tab[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(tab))]
+	return tab[getRandom(len(tab))]
 }
 
 func trunc(text string) string {

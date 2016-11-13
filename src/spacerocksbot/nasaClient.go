@@ -21,6 +21,7 @@ type nasaClient struct {
 	poll        time.Duration
 	path        string
 	body        string // orbiting body to watch
+	debug       bool
 }
 
 func (n *nasaClient) hasDefaultKey() bool {
@@ -38,6 +39,7 @@ func makeNasaClient(config *conf.Config) *nasaClient {
 		offset:      parseInt(config.Get(offsetFlag)),
 		poll:        parseDuration(config.Get(pollFrequencyFlag)),
 		path:        config.Get(nasaPathFlag),
+		debug:       parseBool(config.Get(debugFlag)),
 	}
 }
 
@@ -210,13 +212,19 @@ func (n *nasaClient) getDangerousRocks(offset int) ([]object, error) {
 	return objects, nil
 }
 
+func (n *nasaClient) sleep() {
+	if !n.debug {
+		sleep(maxRandTimeSleepBetweenTweets)
+	}
+}
+
 func (n *nasaClient) fetch(offset int) ([]string, error) {
-	log.Println("checking nasa rocks...")
+	log.Println("[nasa] checking nasa rocks...")
 	current, err := n.getDangerousRocks(offset)
 	if err != nil {
 		return nil, err
 	}
-	log.Println("found", len(current), "potential rocks to tweet")
+	log.Println("[nasa] found", len(current), "potential rocks to tweet")
 	// TODO only merge and save asteroids once they are tweeted ?
 	diff, err := n.update(current)
 	if err != nil {

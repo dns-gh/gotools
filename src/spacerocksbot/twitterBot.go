@@ -74,6 +74,7 @@ type twitterBot struct {
 	updateFreq    time.Duration
 	path          string
 	nasaClient    *nasaClient
+	debug         bool
 }
 
 func (t *twitterBot) tweetNasaData(offset int) error {
@@ -163,6 +164,7 @@ func makeTwitterBot(config *conf.Config) *twitterBot {
 		updateFreq:    parseDuration(config.Get(updateFlag)),
 		path:          config.Get(twitterPathFlag),
 		nasaClient:    makeNasaClient(config),
+		debug:         parseBool(config.Get(debugFlag)),
 	}
 }
 
@@ -179,23 +181,61 @@ func (t *twitterBot) loadTweets(path string) ([]anaconda.Tweet, error) {
 	return *tweets, nil
 }
 
-func mergeTweets(previous, current []anaconda.Tweet) ([]anaconda.Tweet, []anaconda.Tweet) {
+func (t *twitterBot) getOriginalText(tweet *anaconda.Tweet) string {
+	text := tweet.Text
+	if strings.Contains(tweet.Text, retweetTextTag) {
+		tab := strings.SplitN(text, retweetTextIndex, 2)
+		if len(tab) != 2 {
+			log.Println("[twitter] error parsing a tweet text from:", text)
+			// TODO do something
+		}
+		text = tab[1]
+	}
+	return text
+}
+
+func (t *twitterBot) mergeTweets(previous, current []anaconda.Tweet) ([]anaconda.Tweet, []anaconda.Tweet) {
+	current = t.removeDuplicates(current)
 	merged := []anaconda.Tweet{}
 	diff := []anaconda.Tweet{}
-	added := map[int64]struct{}{}
+	addedByID := map[int64]struct{}{}
+	addedByText := map[string]struct{}{}
 	for _, v := range previous {
-		added[v.Id] = struct{}{}
+		addedByID[v.Id] = struct{}{}
+		addedByText[t.getOriginalText(&v)] = struct{}{}
 		merged = append(merged, v)
 	}
 	for _, v := range current {
-		if _, ok := added[v.Id]; ok {
+		if _, ok := addedByID[v.Id]; ok {
+			log.Printf("[twitter] found a duplicate (same id) from database id:%d, text:%s", v.Id, v.Text)
 			continue
 		}
-		added[v.Id] = struct{}{}
+		text := t.getOriginalText(&v)
+		if _, ok := addedByText[text]; ok {
+			log.Printf("[twitter] found a duplicate (same original text) from database id:%d, text:%s", v.Id, v.Text)
+			continue
+		}
+		addedByID[v.Id] = struct{}{}
+		addedByText[text] = struct{}{}
 		merged = append(merged, v)
 		diff = append(diff, v)
 	}
 	return merged, diff
+}
+
+func (t *twitterBot) removeDuplicates(list []anaconda.Tweet) []anaconda.Tweet {
+	temp := map[string]struct{}{}
+	stripped := []anaconda.Tweet{}
+	for _, tweet := range list {
+		text := t.getOriginalText(&tweet)
+		if _, ok := temp[text]; !ok {
+			temp[text] = struct{}{}
+			stripped = append(stripped, tweet)
+		} else {
+			log.Printf("[twitter] found a duplicate id:%d, text:%s", tweet.Id, tweet.Text)
+		}
+	}
+	return stripped
 }
 
 func (t *twitterBot) updateTweets(path string, current []anaconda.Tweet) ([]anaconda.Tweet, error) {
@@ -203,7 +243,7 @@ func (t *twitterBot) updateTweets(path string, current []anaconda.Tweet) ([]anac
 	if err != nil {
 		return nil, err
 	}
-	merged, diff := mergeTweets(previous, current)
+	merged, diff := t.mergeTweets(previous, current)
 	tojson.Save(path, merged)
 	return diff, nil
 }
@@ -220,39 +260,44 @@ func (t *twitterBot) like(tweet *anaconda.Tweet) {
 	if tweet.FavoriteCount > maxFavoriteCountWatch {
 		_, err := t.twitterClient.Favorite(tweet.Id)
 		if err != nil {
-			log.Printf("failed to like tweet (id:%d), error: %v\n", tweet.Id, err)
+			log.Printf("[twitter] failed to like tweet (id:%d), error: %v\n", tweet.Id, err)
 		}
-		log.Printf("liked tweet (id:%d): %s\n", tweet.Id, trunc(tweet.Text))
+		log.Printf("[twitter] liked tweet (id:%d): %s\n", tweet.Id, trunc(tweet.Text))
 	} else if tweet.RetweetedStatus != nil &&
 		tweet.RetweetedStatus.FavoriteCount > maxFavoriteCountWatch {
 		t.like(tweet.RetweetedStatus)
 	}
 }
 
+func (t *twitterBot) sleep() {
+	if !t.debug {
+		sleep(maxRandTimeSleepBetweenTweets)
+	}
+}
+
 func (t *twitterBot) checkRetweet() error {
-	log.Println("checking tweets to retweet...")
-	// TODO some tweet are retweet and hence could be the same on the below list
+	log.Println("[twitter] checking tweets to retweet...")
 	current, err := t.getRelevantTweets()
 	if err != nil {
 		return err
 	}
-	log.Println("found", len(current), "potential tweet to retweet")
+	log.Println("[twitter] found", len(current), "potential tweet to retweet")
 	// TODO only merge and save tweets once they are retweeted ?
 	diff, err := t.updateTweets(t.path, current)
 	if err != nil {
 		return err
 	}
-	log.Println("retweeting", len(diff), "tweets...")
+	log.Println("[twitter] retweeting", len(diff), "tweets...")
 	for _, tweet := range diff {
-		sleep(maxRandTimeSleepBetweenTweets)
+		t.sleep()
 		t.like(&tweet)
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
 		if err != nil {
-			log.Printf("failed to retweet tweet (id:%d), error: %v\n", tweet.Id, err)
+			log.Printf("[twitter] failed to retweet tweet (id:%d), error: %v\n", tweet.Id, err)
 			continue
 		}
 		t.like(&retweet)
-		log.Printf("retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, trunc(retweet.Text))
+		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, trunc(retweet.Text))
 	}
 	return nil
 }
