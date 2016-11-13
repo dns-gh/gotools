@@ -65,8 +65,6 @@ var (
 		"deadly",
 		"fatal",
 	}
-	maxRetweetBySearch    = 2
-	maxFavoriteCountWatch = 2
 )
 
 type twitterBot struct {
@@ -275,20 +273,9 @@ func (t *twitterBot) sleep() {
 	}
 }
 
-func (t *twitterBot) checkRetweet() error {
-	log.Println("[twitter] checking tweets to retweet...")
-	current, err := t.getRelevantTweets()
-	if err != nil {
-		return err
-	}
-	log.Println("[twitter] found", len(current), "potential tweet to retweet")
-	// TODO only merge and save tweets once they are retweeted ?
-	diff, err := t.updateTweets(t.path, current)
-	if err != nil {
-		return err
-	}
-	log.Println("[twitter] retweeting", len(diff), "tweets...")
-	for _, tweet := range diff {
+func (t *twitterBot) retweeting(list []anaconda.Tweet) {
+	log.Println("[twitter] retweeting", len(list), "tweets...")
+	for _, tweet := range list {
 		t.sleep()
 		t.like(&tweet)
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
@@ -298,6 +285,36 @@ func (t *twitterBot) checkRetweet() error {
 		}
 		t.like(&retweet)
 		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, trunc(retweet.Text))
+	}
+}
+
+func (t *twitterBot) getTweets() ([]anaconda.Tweet, error) {
+	log.Println("[twitter] checking tweets to retweet...")
+	current, err := t.getRelevantTweets()
+	if err != nil {
+		return nil, err
+	}
+	log.Println("[twitter] found", len(current), "potential tweet to retweet")
+	// TODO only merge and save tweets once they are retweeted ?
+	diff, err := t.updateTweets(t.path, current)
+	if err != nil {
+		return nil, err
+	}
+	return diff, nil
+}
+
+func (t *twitterBot) checkRetweet() error {
+	count := 0
+	for {
+		tweets, err := t.getTweets()
+		if err != nil {
+			return err
+		}
+		t.retweeting(tweets)
+		if len(tweets) != 0 || count > maxTryRetweetCount {
+			break
+		}
+		count++
 	}
 	return nil
 }
