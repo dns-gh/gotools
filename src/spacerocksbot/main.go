@@ -14,6 +14,10 @@ import (
 	conf "github.com/dns-gh/flagsconfig"
 )
 
+const (
+	debugFlag = "debug"
+)
+
 // Nasa constants
 const (
 	nasaAsteroidsAPIGet = "https://api.nasa.gov/neo/rest/v1/feed?api_key="
@@ -48,6 +52,11 @@ func main() {
 	nasaPath := flag.String(nasaPathFlag, "rocks.json", "[nasa] data file path")
 	update := flag.Duration(updateFlag, 2*time.Hour, "[twitter] update frequency of the bot")
 	twitterPath := flag.String(twitterPathFlag, "tweets.json", "[twitter] data file path")
+	debug := flag.Bool(debugFlag, false, "[twitter] debug mode")
+	config, err := conf.NewConfig("nasa.config")
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
 	log.Println("[nasa] first-offset:", *firstOffset)
 	log.Println("[nasa] offset:", *offset)
 	log.Println("[nasa] body:", *body)
@@ -55,11 +64,8 @@ func main() {
 	log.Println("[nasa] nasa-path:", *nasaPath)
 	log.Println("[twitter] update:", *update)
 	log.Println("[twitter] twitter-path:", *twitterPath)
-	config, err := conf.NewConfig("nasa.config")
-	if err != nil {
-		log.Fatalln(err.Error())
-	}
+	log.Println("[twitter] debug:", *debug)
 	bot := makeTwitterBot(config)
-	log.Println("launching bot...")
+	log.Println(" --- launching bot ---")
 	bot.run()
 }
