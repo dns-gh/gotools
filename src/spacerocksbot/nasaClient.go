@@ -39,6 +39,7 @@ func makeNasaClient(config *conf.Config) *nasaClient {
 		offset:      parseInt(config.Get(offsetFlag)),
 		poll:        parseDuration(config.Get(pollFrequencyFlag)),
 		path:        config.Get(nasaPathFlag),
+		body:        config.Get(bodyFlag),
 		debug:       parseBool(config.Get(debugFlag)),
 	}
 }
