@@ -88,6 +88,7 @@ func (t *twitterBot) tweetNasaData(offset int) error {
 			continue
 		}
 		log.Println("tweet: (id:", tweet.Id, "):", trunc(tweet.Text))
+		t.like(&tweet)
 	}
 	return nil
 }
@@ -184,11 +185,20 @@ func (t *twitterBot) getOriginalText(tweet *anaconda.Tweet) string {
 	if strings.Contains(tweet.Text, retweetTextTag) {
 		tab := strings.SplitN(text, retweetTextIndex, 2)
 		if len(tab) != 2 {
-			log.Println("[twitter] error parsing a tweet text from:", text)
+			log.Println("[twitter] error parsing a tweet text:", text)
 			return text
 			// TODO do something
 		}
 		text = tab[1]
+		if strings.Contains(text, tweetHTTPTag) {
+			subtab := strings.SplitN(text, tweetHTTPTag, 2)
+			if len(subtab) > 2 {
+				log.Println("[twitter] error parsing a sub tweet text:", text)
+				return text
+				// TODO do something
+			}
+			text = subtab[0]
+		}
 	}
 	return text
 }

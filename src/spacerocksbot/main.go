@@ -43,6 +43,7 @@ const (
 	maxTryRetweetCount    = 5
 	retweetTextTag        = "RT @"
 	retweetTextIndex      = ": "
+	tweetHTTPTag              = "http://"
 )
 
 var (
