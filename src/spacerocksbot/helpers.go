@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -81,4 +83,17 @@ func trunc(text string) string {
 		length = maxLength
 	}
 	return text[0:length]
+}
+
+func makeLog(path string) (string, *os.File, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, err
+	}
+	err = os.MkdirAll(filepath.Dir(abs), os.ModePerm)
+	if err != nil {
+		return "", nil, err
+	}
+	f, err := os.OpenFile(abs, os.O_WRONLY+os.O_APPEND+os.O_CREATE, os.ModePerm)
+	return abs, f, err
 }

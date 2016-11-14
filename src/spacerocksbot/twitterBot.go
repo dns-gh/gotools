@@ -80,7 +80,7 @@ func (t *twitterBot) tweetNasaData(offset int) error {
 	if err != nil {
 		return err
 	}
-	log.Println("tweeting", len(diff), "tweet(s) about rocks...")
+	log.Println("[twitter] tweeting", len(diff), "tweet(s) about rocks...")
 	for _, msg := range diff {
 		tweet, err := t.twitterClient.PostTweet(msg, nil)
 		if err != nil {
@@ -158,13 +158,26 @@ func makeTwitterBot(config *conf.Config) *twitterBot {
 	}
 	anaconda.SetConsumerKey(consumerKey)
 	anaconda.SetConsumerSecret(consumerSecret)
-	return &twitterBot{
+	bot := &twitterBot{
 		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
 		updateFreq:    parseDuration(config.Get(updateFlag)),
 		path:          config.Get(twitterPathFlag),
 		nasaClient:    makeNasaClient(config),
 		debug:         parseBool(config.Get(debugFlag)),
 	}
+	go func() {
+		bot.unfollowAll()
+		log.Println("[twitter] auto unfollow disabled")
+	}()
+	go func() {
+		bot.followAll()
+		log.Println("[twitter] auto follow disabled")
+	}()
+	return bot
+}
+
+func (t *twitterBot) close() {
+	t.twitterClient.Close()
 }
 
 // TODO factorize with load, merge and update ?
@@ -341,4 +354,85 @@ func (t *twitterBot) checkRetweet() error {
 		count++
 	}
 	return nil
+}
+
+func (t *twitterBot) unfollowAll() {
+	cursor, err := t.twitterClient.GetFriendsIds(nil)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+	for _, id := range cursor.Ids {
+		time.Sleep(30 * time.Second)
+		_, err := t.twitterClient.UnfollowUserId(id)
+		if err != nil {
+			log.Println(err.Error())
+			if strings.Contains(err.Error(), "Invalid or expired token") {
+				return
+			}
+		}
+	}
+	t.unfollowAll()
+}
+
+func (t *twitterBot) followAll() {
+	ids := t.getFollowersIds("nasa", 0)
+	t.followIds(ids)
+	t.followAll()
+}
+
+func (t *twitterBot) followIds(ids map[int64]struct{}) {
+	for id := range ids {
+		time.Sleep(30 * time.Second)
+		user, err := t.twitterClient.FollowUserId(id, nil)
+		if err != nil {
+			log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
+			if strings.Contains(err.Error(), "You are unable to follow more people at this time") {
+				break
+			}
+			continue
+		}
+		log.Printf("[twitter] following (id:%d, name:%s)\n", user.Id, user.Name)
+	}
+}
+
+func (t *twitterBot) getFollowersIds(query string, depth int) map[int64]struct{} {
+	fmt.Printf("[twitter] searching people to follow (q:%s, depth:%d)\n", query, depth)
+	users, err := t.twitterClient.GetUserSearch(query, nil)
+	if err != nil {
+		log.Fatalln(err.Error())
+	}
+	ids := map[int64]struct{}{}
+	count := 0
+	for _, user := range users {
+		nextCursor := "-1"
+		currentDepth := 0
+		for {
+			v := url.Values{}
+			if nextCursor != "-1" {
+				v.Set("cursor", nextCursor)
+			}
+			cursor, err := t.twitterClient.GetFollowersUser(user.Id, nil)
+			if err != nil {
+				log.Println(err.Error())
+				continue
+			}
+			for _, v := range cursor.Ids {
+				ids[v] = struct{}{}
+			}
+			if currentDepth >= depth {
+				break
+			}
+			currentDepth++
+			nextCursor = cursor.Next_cursor_str
+			if nextCursor == "0" {
+				break
+			}
+		}
+		count++
+		if count >= getUserSearchAPIRateLimit {
+			break
+		}
+	}
+	return ids
 }

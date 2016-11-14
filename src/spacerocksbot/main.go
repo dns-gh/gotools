@@ -8,7 +8,10 @@ package main
 
 import (
 	"flag"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	conf "github.com/dns-gh/flagsconfig"
@@ -37,13 +40,14 @@ const (
 const (
 	updateFlag = "update"
 	// TODO save only relevant information on tweets, the file coudl become too large at some point otherwise
-	twitterPathFlag       = "twitter-path"
-	maxRetweetBySearch    = 2
-	maxFavoriteCountWatch = 2
-	maxTryRetweetCount    = 5
-	retweetTextTag        = "RT @"
-	retweetTextIndex      = ": "
+	twitterPathFlag           = "twitter-path"
+	maxRetweetBySearch        = 2
+	maxFavoriteCountWatch     = 2
+	maxTryRetweetCount        = 5
+	retweetTextTag            = "RT @"
+	retweetTextIndex          = ": "
 	tweetHTTPTag              = "http://"
+	getUserSearchAPIRateLimit = 15
 )
 
 var (
@@ -56,13 +60,21 @@ func main() {
 	body := flag.String(bodyFlag, "Earth", "[nasa] orbiting body to watch for close asteroids")
 	poll := flag.Duration(pollFrequencyFlag, 12*time.Hour, "[nasa] polling frequency of data")
 	nasaPath := flag.String(nasaPathFlag, "rocks.json", "[nasa] data file path")
-	update := flag.Duration(updateFlag, 2*time.Hour, "[twitter] update frequency of the bot")
+	update := flag.Duration(updateFlag, 1*time.Hour, "[twitter] update frequency of the bot")
 	twitterPath := flag.String(twitterPathFlag, "tweets.json", "[twitter] data file path")
 	debug := flag.Bool(debugFlag, false, "[twitter] debug mode")
 	config, err := conf.NewConfig("nasa.config")
+	// log to a file also
+	log.SetFlags(0)
+	logPath, f, err := makeLog(filepath.Join(filepath.Dir(os.Args[0]), "Debug", "bot.log"))
+	if err == nil {
+		defer f.Close()
+		log.SetOutput(io.MultiWriter(f, os.Stderr))
+	}
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
+	log.Println("logging to:", logPath)
 	log.Println("[nasa] first-offset:", *firstOffset)
 	log.Println("[nasa] offset:", *offset)
 	log.Println("[nasa] body:", *body)
@@ -71,7 +83,9 @@ func main() {
 	log.Println("[twitter] update:", *update)
 	log.Println("[twitter] twitter-path:", *twitterPath)
 	log.Println("[twitter] debug:", *debug)
+
 	bot := makeTwitterBot(config)
+	defer bot.close()
 	log.Println(" --- launching bot ---")
 	bot.run()
 }
