@@ -82,8 +82,7 @@ func (t *twitterBot) tweetNasaData(offset int) error {
 	}
 	log.Println("tweeting", len(diff), "tweet(s) about rocks...")
 	for _, msg := range diff {
-		tw := url.Values{}
-		tweet, err := t.twitterClient.PostTweet(msg, tw)
+		tweet, err := t.twitterClient.PostTweet(msg, nil)
 		if err != nil {
 			log.Println(err.Error())
 			continue
@@ -121,6 +120,7 @@ func (t *twitterBot) update() {
 	if err != nil {
 		log.Println(err.Error())
 	}
+	//t.twitterClient.GetUserSearch
 	log.Println("[twitter] update done.")
 }
 
@@ -185,6 +185,7 @@ func (t *twitterBot) getOriginalText(tweet *anaconda.Tweet) string {
 		tab := strings.SplitN(text, retweetTextIndex, 2)
 		if len(tab) != 2 {
 			log.Println("[twitter] error parsing a tweet text from:", text)
+			return text
 			// TODO do something
 		}
 		text = tab[1]
@@ -230,7 +231,7 @@ func (t *twitterBot) removeDuplicates(list []anaconda.Tweet) []anaconda.Tweet {
 			temp[text] = struct{}{}
 			stripped = append(stripped, tweet)
 		} else {
-			log.Printf("[twitter] found a duplicate id:%d, text:%s", tweet.Id, tweet.Text)
+			log.Printf("[twitter] found a duplicate (id:%d), text:%s", tweet.Id, tweet.Text)
 		}
 	}
 	return stripped
@@ -273,19 +274,32 @@ func (t *twitterBot) sleep() {
 	}
 }
 
-func (t *twitterBot) retweeting(list []anaconda.Tweet) {
+func (t *twitterBot) followUser(tweet *anaconda.Tweet) {
+	user, err := t.twitterClient.FollowUserId(tweet.User.Id, nil)
+	if err != nil {
+		log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", tweet.User.Id, tweet.User.Name, err)
+	}
+	log.Printf("[twitter] following user (id:%d, name:%s)\n", user.Id, user.Name)
+}
+
+func (t *twitterBot) retweeting(list []anaconda.Tweet) []anaconda.Tweet {
 	log.Println("[twitter] retweeting", len(list), "tweets...")
+	retweeted := []anaconda.Tweet{}
 	for _, tweet := range list {
 		t.sleep()
 		t.like(&tweet)
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
 		if err != nil {
 			log.Printf("[twitter] failed to retweet tweet (id:%d), error: %v\n", tweet.Id, err)
+			t.followUser(&tweet)
 			continue
 		}
 		t.like(&retweet)
+		retweeted = append(retweeted, tweet)
 		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, trunc(retweet.Text))
+		t.followUser(&tweet)
 	}
+	return retweeted
 }
 
 func (t *twitterBot) getTweets() ([]anaconda.Tweet, error) {
@@ -310,8 +324,8 @@ func (t *twitterBot) checkRetweet() error {
 		if err != nil {
 			return err
 		}
-		t.retweeting(tweets)
-		if len(tweets) != 0 || count > maxTryRetweetCount {
+		retweeted := t.retweeting(tweets)
+		if len(retweeted) != 0 || count > maxTryRetweetCount {
 			break
 		}
 		count++
