@@ -67,12 +67,58 @@ var (
 	}
 )
 
+type twitterFollowers struct {
+	// note: we cannot use integers as keys in encode/json so use string instead
+	Ids map[string]int64 `json:"ids"` // map id -> timestamp
+}
+
 type twitterBot struct {
 	twitterClient *anaconda.TwitterApi
 	updateFreq    time.Duration
-	path          string
+	followersPath string
+	followers     *twitterFollowers
+	tweetsPath    string
 	nasaClient    *nasaClient
 	debug         bool
+}
+
+func makeTwitterBot(config *conf.Config) *twitterBot {
+	errorList := []string{}
+	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
+	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
+	accessToken := getEnv(errorList, "TWITTER_ACCESS_TOKEN")
+	accessSecret := getEnv(errorList, "TWITTER_ACCESS_SECRET")
+	if len(errorList) > 0 {
+		log.Fatalln(fmt.Sprintf("errors:\n%s", strings.Join(errorList, "\n")))
+	}
+	anaconda.SetConsumerKey(consumerKey)
+	anaconda.SetConsumerSecret(consumerSecret)
+	bot := &twitterBot{
+		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
+		updateFreq:    parseDuration(config.Get(updateFlag)),
+		followersPath: config.Get(twitterFollowersPathFlag),
+		followers: &twitterFollowers{
+			Ids: make(map[string]int64),
+		},
+		tweetsPath: config.Get(twitterTweetsPathFlag),
+		nasaClient: makeNasaClient(config),
+		debug:      parseBool(config.Get(debugFlag)),
+	}
+	bot.updateFollowers()
+	go func() {
+		//bot.unfollowAll()
+		log.Println("[twitter] auto unfollow disabled")
+	}()
+	go func() {
+		//time.Sleep(45 * time.Second)
+		//bot.followAll()
+		log.Println("[twitter] auto follow disabled")
+	}()
+	return bot
+}
+
+func (t *twitterBot) close() {
+	t.twitterClient.Close()
 }
 
 func (t *twitterBot) tweetNasaData(offset int) error {
@@ -129,6 +175,10 @@ func (t *twitterBot) run() {
 	go func() {
 		t.pollNasa()
 	}()
+	followers, err := t.updateFollowers()
+	if err != nil {
+		log.Fatalln(err)
+	}
 	// update twitter
 	t.update()
 	ticker := time.NewTicker(t.updateFreq)
@@ -146,47 +196,13 @@ func getEnv(errorList []string, key string) string {
 	return value
 }
 
-func makeTwitterBot(config *conf.Config) *twitterBot {
-	errorList := []string{}
-	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
-	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
-	accessToken := getEnv(errorList, "TWITTER_ACCESS_TOKEN")
-	accessSecret := getEnv(errorList, "TWITTER_ACCESS_SECRET")
-	if len(errorList) > 0 {
-		log.Fatalln(fmt.Sprintf("errors:\n%s", strings.Join(errorList, "\n")))
-	}
-	anaconda.SetConsumerKey(consumerKey)
-	anaconda.SetConsumerSecret(consumerSecret)
-	bot := &twitterBot{
-		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
-		updateFreq:    parseDuration(config.Get(updateFlag)),
-		path:          config.Get(twitterPathFlag),
-		nasaClient:    makeNasaClient(config),
-		debug:         parseBool(config.Get(debugFlag)),
-	}
-	go func() {
-		//bot.unfollowAll()
-		log.Println("[twitter] auto unfollow disabled")
-	}()
-	go func() {
-		//time.Sleep(45 * time.Second)
-		//bot.followAll()
-		log.Println("[twitter] auto follow disabled")
-	}()
-	return bot
-}
-
-func (t *twitterBot) close() {
-	t.twitterClient.Close()
-}
-
 // TODO factorize with load, merge and update ?
 func (t *twitterBot) loadTweets() ([]anaconda.Tweet, error) {
 	tweets := &[]anaconda.Tweet{}
-	if _, err := os.Stat(t.path); os.IsNotExist(err) {
-		tojson.Save(t.path, tweets)
+	if _, err := os.Stat(t.tweetsPath); os.IsNotExist(err) {
+		tojson.Save(t.tweetsPath, tweets)
 	}
-	err := tojson.Load(t.path, tweets)
+	err := tojson.Load(t.tweetsPath, tweets)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +274,7 @@ func (t *twitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet
 
 func (t *twitterBot) getRelevantTweets() ([]anaconda.Tweet, error) {
 	query := getRandomElement(searchTweetQueries)
-	log.Println("searching with query:", query)
+	log.Println("[twitter] searching with query:", query)
 	v := url.Values{}
 	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
 	results, _ := t.twitterClient.GetSearch(query, v)
@@ -355,9 +371,42 @@ func (t *twitterBot) checkRetweet() error {
 			}
 		}
 		previous = append(previous, retweeted)
-		tojson.Save(t.path, previous)
+		tojson.Save(t.tweetsPath, previous)
 		return nil
 	}
+}
+
+func (t *twitterBot) updateFollowers() (*twitterFollowers, error) {
+	followers := twitterFollowers{
+		Ids: make(map[string]int64),
+	}
+	if _, err := os.Stat(t.followersPath); os.IsNotExist(err) {
+		tojson.Save(t.followersPath, &followers)
+	}
+	err := tojson.Load(t.followersPath, &followers)
+	if err != nil {
+		return nil, err
+	}
+	newFollowers := &twitterFollowers{
+		Ids: make(map[string]int64),
+	}
+	for v := range t.twitterClient.GetFollowersIdsAll(nil) {
+		for _, id := range v.Ids {
+			strID := strconv.FormatInt(id, 10)
+			if value, ok := followers.Ids[strID]; ok {
+				// found in database
+				newFollowers.Ids[strID] = value
+				continue
+			}
+			newFollowers.Ids[strID] = time.Now().UnixNano()
+		}
+	}
+	err = tojson.Save(t.followersPath, newFollowers)
+	if err != nil {
+		return nil, err
+	}
+	t.followers = newFollowers
+	return newFollowers, nil
 }
 
 func (t *twitterBot) unfollowAll() {
