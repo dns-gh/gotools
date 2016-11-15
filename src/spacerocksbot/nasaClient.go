@@ -240,7 +240,10 @@ func (n *nasaClient) fetch(offset int) ([]string, error) {
 		name := object.Name
 		parts := strings.SplitN(object.Name, " ", 2)
 		if len(parts) == 2 {
-			name = parts[1]
+			partsBis := strings.SplitN(parts[1], ")", 2)
+			if len(partsBis) > 0 {
+				name = partsBis[0]
+			}
 		}
 		// extract lisible speed
 		speed := closeData.RelativeVelocity.KilometersPerSecond

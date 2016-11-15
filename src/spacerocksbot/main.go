@@ -60,7 +60,7 @@ func main() {
 	body := flag.String(bodyFlag, "Earth", "[nasa] orbiting body to watch for close asteroids")
 	poll := flag.Duration(pollFrequencyFlag, 12*time.Hour, "[nasa] polling frequency of data")
 	nasaPath := flag.String(nasaPathFlag, "rocks.json", "[nasa] data file path")
-	update := flag.Duration(updateFlag, 1*time.Hour, "[twitter] update frequency of the bot")
+	update := flag.Duration(updateFlag, 10*time.Minute, "[twitter] update frequency of the bot")
 	twitterPath := flag.String(twitterPathFlag, "tweets.json", "[twitter] data file path")
 	debug := flag.Bool(debugFlag, false, "[twitter] debug mode")
 	config, err := conf.NewConfig("nasa.config")
