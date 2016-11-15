@@ -38,9 +38,10 @@ const (
 
 // Twitter constants
 const (
-	updateFlag = "update"
+	updateFlag               = "update"
+	twitterFollowersPathFlag = "twitter-followers-path"
+	twitterFriendsPathFlag   = "twitter-friends-path"
 	// TODO save only relevant information on tweets, the file could become too large at some point otherwise
-	twitterFollowersPathFlag  = "twitter-followers-path"
 	twitterTweetsPathFlag     = "twitter-tweets-path"
 	maxRetweetBySearch        = 2
 	maxFavoriteCountWatch     = 2
@@ -63,6 +64,7 @@ func main() {
 	nasaPath := flag.String(nasaPathFlag, "rocks.json", "[nasa] data file path")
 	update := flag.Duration(updateFlag, 10*time.Minute, "[twitter] update frequency of the bot")
 	twitterFollowersPath := flag.String(twitterFollowersPathFlag, "followers.json", "[twitter] data file path for followers")
+	twitterFriendsPath := flag.String(twitterFriendsPathFlag, "friends.json", "[twitter] data file path for friends")
 	twitterTweetsPath := flag.String(twitterTweetsPathFlag, "tweets.json", "[twitter] data file path for tweets")
 	debug := flag.Bool(debugFlag, false, "[twitter] debug mode")
 	config, err := conf.NewConfig("nasa.config")
@@ -84,6 +86,7 @@ func main() {
 	log.Println("[nasa] nasa-path:", *nasaPath)
 	log.Println("[twitter] update:", *update)
 	log.Println("[twitter] twitter-followers-path:", *twitterFollowersPath)
+	log.Println("[twitter] twitter-friends-path:", *twitterFriendsPath)
 	log.Println("[twitter] twitter-tweets-path:", *twitterTweetsPath)
 	log.Println("[twitter] debug:", *debug)
 

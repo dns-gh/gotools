@@ -67,16 +67,23 @@ var (
 	}
 )
 
-type twitterFollowers struct {
+type twitterUser struct {
+	Timestamp int64 `json:"timestamp"`
+	Follow    bool  `json:"active"`
+}
+
+type twitterUsers struct {
 	// note: we cannot use integers as keys in encode/json so use string instead
-	Ids map[string]int64 `json:"ids"` // map id -> timestamp
+	Ids map[string]*twitterUser `json:"ids"` // map id -> user
 }
 
 type twitterBot struct {
 	twitterClient *anaconda.TwitterApi
 	updateFreq    time.Duration
 	followersPath string
-	followers     *twitterFollowers
+	followers     *twitterUsers
+	friendsPath   string
+	friends       *twitterUsers
 	tweetsPath    string
 	nasaClient    *nasaClient
 	debug         bool
@@ -97,14 +104,25 @@ func makeTwitterBot(config *conf.Config) *twitterBot {
 		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
 		updateFreq:    parseDuration(config.Get(updateFlag)),
 		followersPath: config.Get(twitterFollowersPathFlag),
-		followers: &twitterFollowers{
-			Ids: make(map[string]int64),
+		followers: &twitterUsers{
+			Ids: make(map[string]*twitterUser),
+		},
+		friendsPath: config.Get(twitterFriendsPathFlag),
+		friends: &twitterUsers{
+			Ids: make(map[string]*twitterUser),
 		},
 		tweetsPath: config.Get(twitterTweetsPathFlag),
 		nasaClient: makeNasaClient(config),
 		debug:      parseBool(config.Get(debugFlag)),
 	}
-	bot.updateFollowers()
+	err := bot.updateFollowers()
+	if err != nil {
+		log.Println(err.Error())
+	}
+	err = bot.updateFriends()
+	if err != nil {
+		log.Println(err.Error())
+	}
 	go func() {
 		//bot.unfollowAll()
 		log.Println("[twitter] auto unfollow disabled")
@@ -119,6 +137,11 @@ func makeTwitterBot(config *conf.Config) *twitterBot {
 
 func (t *twitterBot) close() {
 	t.twitterClient.Close()
+}
+
+func (t *twitterBot) isFollower(id int64) bool {
+	_, ok := t.followers.Ids[strconv.FormatInt(id, 10)]
+	return ok
 }
 
 func (t *twitterBot) tweetNasaData(offset int) error {
@@ -175,11 +198,7 @@ func (t *twitterBot) run() {
 	go func() {
 		t.pollNasa()
 	}()
-	followers, err := t.updateFollowers()
-	if err != nil {
-		log.Fatalln(err)
-	}
-	// update twitter
+	// update twitter account
 	t.update()
 	ticker := time.NewTicker(t.updateFreq)
 	defer ticker.Stop()
@@ -314,7 +333,6 @@ func (t *twitterBot) followUser(user *anaconda.User) {
 		log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
 	}
 	log.Printf("[twitter] following user (id:%d, name:%s)\n", followed.Id, followed.Name)
-	//t.unfollowUser(&followed)
 }
 
 func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err error) {
@@ -376,54 +394,104 @@ func (t *twitterBot) checkRetweet() error {
 	}
 }
 
-func (t *twitterBot) updateFollowers() (*twitterFollowers, error) {
-	followers := twitterFollowers{
-		Ids: make(map[string]int64),
+func (t *twitterBot) updateFollowers() error {
+	followers := twitterUsers{
+		Ids: make(map[string]*twitterUser),
 	}
 	if _, err := os.Stat(t.followersPath); os.IsNotExist(err) {
 		tojson.Save(t.followersPath, &followers)
 	}
 	err := tojson.Load(t.followersPath, &followers)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	newFollowers := &twitterFollowers{
-		Ids: make(map[string]int64),
+	newFollowers := &twitterUsers{
+		Ids: make(map[string]*twitterUser),
 	}
 	for v := range t.twitterClient.GetFollowersIdsAll(nil) {
 		for _, id := range v.Ids {
 			strID := strconv.FormatInt(id, 10)
+			temp := &twitterUser{
+				Timestamp: time.Now().UnixNano(),
+				Follow:    true,
+			}
 			if value, ok := followers.Ids[strID]; ok {
 				// found in database
-				newFollowers.Ids[strID] = value
-				continue
+				temp.Timestamp = value.Timestamp
+				temp.Follow = value.Follow
 			}
-			newFollowers.Ids[strID] = time.Now().UnixNano()
+			newFollowers.Ids[strID] = temp
 		}
 	}
 	err = tojson.Save(t.followersPath, newFollowers)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	t.followers = newFollowers
-	return newFollowers, nil
+	return nil
+}
+
+func (t *twitterBot) updateFriends() error {
+	friends := twitterUsers{
+		Ids: make(map[string]*twitterUser),
+	}
+	if _, err := os.Stat(t.friendsPath); os.IsNotExist(err) {
+		fmt.Println("[test]", t.friendsPath)
+		tojson.Save(t.friendsPath, &friends)
+	}
+	err := tojson.Load(t.friendsPath, &friends)
+	if err != nil {
+		return err
+	}
+	newFriends := &twitterUsers{
+		Ids: make(map[string]*twitterUser),
+	}
+	for v := range t.twitterClient.GetFriendsIdsAll(nil) {
+		for _, id := range v.Ids {
+			strID := strconv.FormatInt(id, 10)
+			temp := &twitterUser{
+				Timestamp: time.Now().UnixNano(),
+				Follow:    true,
+			}
+			if value, ok := friends.Ids[strID]; ok {
+				// found in database
+				temp.Timestamp = value.Timestamp
+				temp.Follow = value.Follow
+			}
+			newFriends.Ids[strID] = temp
+		}
+	}
+	err = tojson.Save(t.friendsPath, newFriends)
+	if err != nil {
+		return err
+	}
+	t.friends = newFriends
+	return nil
+}
+
+func checkExpiredInvalidToken(err error) {
+	if strings.Contains(err.Error(), "Invalid or expired token") {
+		log.Fatalln(err)
+	}
 }
 
 func (t *twitterBot) unfollowAll() {
-	time.Sleep(90 * time.Second)
-	cursor, err := t.twitterClient.GetFriendsIds(nil)
-	if err != nil {
-		log.Println(err.Error())
-		return
+	time.Sleep(30 * time.Second)
+	ids := []int64{}
+	// get all friends by chunk of 5000
+	for v := range t.twitterClient.GetFriendsIdsAll(nil) {
+		for _, id := range v.Ids {
+			ids = append(ids, id)
+
+		}
 	}
-	for _, id := range cursor.Ids {
-		time.Sleep(50 * time.Second)
+	// unfollow each friend
+	for _, id := range ids {
+		time.Sleep(30 * time.Second)
 		user, err := t.twitterClient.UnfollowUserId(id)
 		if err != nil {
 			log.Println(err.Error())
-			if strings.Contains(err.Error(), "Invalid or expired token") {
-				return
-			}
+			checkExpiredInvalidToken(err)
 		}
 		log.Printf("[twitter] unfollowing (id:%d, name:%s)\n", user.Id, user.Name)
 	}
@@ -431,8 +499,8 @@ func (t *twitterBot) unfollowAll() {
 }
 
 func (t *twitterBot) followAll() {
-	time.Sleep(90 * time.Second)
-	ids := t.getFollowersIds("nasa", 0)
+	time.Sleep(30 * time.Second)
+	ids := t.getUserIds("nasa", 0)
 	t.followIds(ids)
 	t.followAll()
 }
@@ -452,7 +520,7 @@ func (t *twitterBot) followIds(ids map[int64]struct{}) {
 	}
 }
 
-func (t *twitterBot) getFollowersIds(query string, depth int) map[int64]struct{} {
+func (t *twitterBot) getUserIds(query string, depth int) map[int64]struct{} {
 	fmt.Printf("[twitter] searching people to follow (q:%s, depth:%d)\n", query, depth)
 	users, err := t.twitterClient.GetUserSearch(query, nil)
 	if err != nil {
