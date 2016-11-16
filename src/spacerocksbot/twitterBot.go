@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"net/url"
@@ -69,7 +70,7 @@ var (
 
 type twitterUser struct {
 	Timestamp int64 `json:"timestamp"`
-	Follow    bool  `json:"active"`
+	Follow    bool  `json:"follow"`
 }
 
 type twitterUsers struct {
@@ -87,6 +88,7 @@ type twitterBot struct {
 	tweetsPath    string
 	nasaClient    *nasaClient
 	debug         bool
+	mutex         sync.Mutex
 }
 
 func makeTwitterBot(config *conf.Config) *twitterBot {
@@ -124,13 +126,15 @@ func makeTwitterBot(config *conf.Config) *twitterBot {
 		log.Println(err.Error())
 	}
 	go func() {
-		//bot.unfollowAll()
-		log.Println("[twitter] auto unfollow disabled")
+		log.Println("[twitter] launching auto unfollow...")
+		bot.unfollowAll()
+		log.Println("[twitter] - WARNING - auto unfollow disabled")
 	}()
 	go func() {
-		//time.Sleep(45 * time.Second)
-		//bot.followAll()
-		log.Println("[twitter] auto follow disabled")
+		log.Println("[twitter] launching auto follow...")
+		ids := bot.fetchUserIds("nasa", 0)
+		bot.followAll(ids)
+		log.Println("[twitter] - WARNING - auto follow disabled")
 	}()
 	return bot
 }
@@ -140,8 +144,65 @@ func (t *twitterBot) close() {
 }
 
 func (t *twitterBot) isFollower(id int64) bool {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	_, ok := t.followers.Ids[strconv.FormatInt(id, 10)]
 	return ok
+}
+
+func (t *twitterBot) getFriend(id int64) (*twitterUser, bool) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	user, ok := t.friends.Ids[strconv.FormatInt(id, 10)]
+	if ok {
+		return &twitterUser{
+			Timestamp: user.Timestamp,
+			Follow:    user.Follow,
+		}, ok
+	}
+	return nil, false
+}
+
+func (t *twitterBot) getFriendToUnFollow() (int64, bool) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	for strID, user := range t.friends.Ids {
+		// unfollow only if is followed and is in database from at least 1 day
+		if time.Now().UnixNano()-user.Timestamp < OneDayInNano || !user.Follow {
+			continue
+		}
+		id, err := strconv.ParseInt(strID, 10, 64)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		return id, true
+	}
+	return 0, false
+}
+
+func (t *twitterBot) addFriend(id int64) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.friends.Ids[strconv.FormatInt(id, 10)] = &twitterUser{
+		Timestamp: time.Now().UnixNano(),
+		Follow:    true,
+	}
+	err := tojson.Save(t.friendsPath, t.friends)
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
+// UnfollowFriend flags the friend as not followed anymore.
+// We do not remove friends from database.
+func (t *twitterBot) unfollowFriend(id int64) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.friends.Ids[strconv.FormatInt(id, 10)].Follow = false
+	err := tojson.Save(t.friendsPath, t.friends)
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func (t *twitterBot) tweetNasaData(offset int) error {
@@ -199,6 +260,7 @@ func (t *twitterBot) run() {
 		t.pollNasa()
 	}()
 	// update twitter account
+	log.Println("[twitter] launching auto retweet...")
 	t.update()
 	ticker := time.NewTicker(t.updateFreq)
 	defer ticker.Stop()
@@ -315,13 +377,14 @@ func (t *twitterBot) like(tweet *anaconda.Tweet) {
 
 func (t *twitterBot) sleep() {
 	if !t.debug {
-		sleep(maxRandTimeSleepBetweenTweets)
+		sleep(maxRandTimeSleepBetweenRequests)
 	}
 }
 
 func (t *twitterBot) unfollowUser(user *anaconda.User) {
 	unfollowed, err := t.twitterClient.UnfollowUserId(user.Id)
 	if err != nil {
+		checkBotRestriction(err)
 		log.Printf("[twitter] failed to unfollow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
 	}
 	log.Printf("[twitter] unfollowing user (id:%d, name:%s)\n", unfollowed.Id, unfollowed.Name)
@@ -329,7 +392,8 @@ func (t *twitterBot) unfollowUser(user *anaconda.User) {
 
 func (t *twitterBot) followUser(user *anaconda.User) {
 	followed, err := t.twitterClient.FollowUserId(user.Id, nil)
-	if err != nil {
+	if err != nil && !checkUnableToFollowAtThisTime(err) {
+		checkBotRestriction(err)
 		log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
 	}
 	log.Printf("[twitter] following user (id:%d, name:%s)\n", followed.Id, followed.Name)
@@ -338,7 +402,6 @@ func (t *twitterBot) followUser(user *anaconda.User) {
 func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err error) {
 	for _, tweet := range current {
 		log.Printf("[twitter] trying to retweet tweet id:%d\n", tweet.Id)
-		//t.sleep()
 		t.like(&tweet)
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
 		if err != nil {
@@ -347,8 +410,8 @@ func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err e
 			continue
 		}
 		rt = retweet
-		t.like(&retweet)
-		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", retweet.Id, tweet.Id, trunc(retweet.Text))
+		t.like(&rt)
+		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", rt.Id, tweet.Id, trunc(rt.Text))
 		t.followUser(&tweet.User)
 		return rt, err
 	}
@@ -375,6 +438,7 @@ func (t *twitterBot) checkRetweet() error {
 		return err
 	}
 	for {
+		t.sleep()
 		tweets, err := t.getTweets(previous)
 		if err != nil {
 			return err
@@ -395,166 +459,172 @@ func (t *twitterBot) checkRetweet() error {
 }
 
 func (t *twitterBot) updateFollowers() error {
-	followers := twitterUsers{
+	followers := &twitterUsers{
 		Ids: make(map[string]*twitterUser),
 	}
 	if _, err := os.Stat(t.followersPath); os.IsNotExist(err) {
-		tojson.Save(t.followersPath, &followers)
+		tojson.Save(t.followersPath, followers)
 	}
-	err := tojson.Load(t.followersPath, &followers)
+	err := tojson.Load(t.followersPath, followers)
 	if err != nil {
 		return err
 	}
-	newFollowers := &twitterUsers{
-		Ids: make(map[string]*twitterUser),
+	for _, v := range followers.Ids {
+		v.Follow = false
 	}
 	for v := range t.twitterClient.GetFollowersIdsAll(nil) {
 		for _, id := range v.Ids {
 			strID := strconv.FormatInt(id, 10)
-			temp := &twitterUser{
-				Timestamp: time.Now().UnixNano(),
-				Follow:    true,
+			user, ok := followers.Ids[strID]
+			if ok {
+				user.Follow = true
+			} else {
+				followers.Ids[strID] = &twitterUser{
+					Timestamp: time.Now().UnixNano(),
+					Follow:    true,
+				}
 			}
-			if value, ok := followers.Ids[strID]; ok {
-				// found in database
-				temp.Timestamp = value.Timestamp
-				temp.Follow = value.Follow
-			}
-			newFollowers.Ids[strID] = temp
 		}
 	}
-	err = tojson.Save(t.followersPath, newFollowers)
+	err = tojson.Save(t.followersPath, followers)
 	if err != nil {
 		return err
 	}
-	t.followers = newFollowers
+	t.followers = followers
 	return nil
 }
 
 func (t *twitterBot) updateFriends() error {
-	friends := twitterUsers{
+	friends := &twitterUsers{
 		Ids: make(map[string]*twitterUser),
 	}
 	if _, err := os.Stat(t.friendsPath); os.IsNotExist(err) {
-		fmt.Println("[test]", t.friendsPath)
-		tojson.Save(t.friendsPath, &friends)
+		tojson.Save(t.friendsPath, friends)
 	}
-	err := tojson.Load(t.friendsPath, &friends)
+	err := tojson.Load(t.friendsPath, friends)
 	if err != nil {
 		return err
 	}
-	newFriends := &twitterUsers{
-		Ids: make(map[string]*twitterUser),
+	for _, v := range friends.Ids {
+		v.Follow = false
 	}
 	for v := range t.twitterClient.GetFriendsIdsAll(nil) {
 		for _, id := range v.Ids {
 			strID := strconv.FormatInt(id, 10)
-			temp := &twitterUser{
-				Timestamp: time.Now().UnixNano(),
-				Follow:    true,
+			user, ok := friends.Ids[strID]
+			if ok {
+				user.Follow = true
+			} else {
+				friends.Ids[strID] = &twitterUser{
+					Timestamp: time.Now().UnixNano(),
+					Follow:    true,
+				}
 			}
-			if value, ok := friends.Ids[strID]; ok {
-				// found in database
-				temp.Timestamp = value.Timestamp
-				temp.Follow = value.Follow
-			}
-			newFriends.Ids[strID] = temp
 		}
 	}
-	err = tojson.Save(t.friendsPath, newFriends)
+	err = tojson.Save(t.friendsPath, friends)
 	if err != nil {
 		return err
 	}
-	t.friends = newFriends
+	t.friends = friends
 	return nil
 }
 
-func checkExpiredInvalidToken(err error) {
-	if strings.Contains(err.Error(), "Invalid or expired token") {
-		log.Fatalln(err)
+func checkBotRestriction(err error) {
+	if err != nil {
+		strErr := err.Error()
+		if strings.Contains(strErr, "Invalid or expired token") ||
+			strings.Contains(strErr, "this account is temporarily locked") {
+			log.Fatalln(err)
+		}
+		log.Println(strErr)
 	}
+}
+
+func checkUnableToFollowAtThisTime(err error) bool {
+	if err != nil {
+		if strings.Contains(err.Error(), "You are unable to follow more people at this time") {
+			log.Println("unable to follow at this time, waiting 15min...,", err.Error())
+			time.Sleep(15 * time.Minute)
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 func (t *twitterBot) unfollowAll() {
-	time.Sleep(30 * time.Second)
-	ids := []int64{}
-	// get all friends by chunk of 5000
-	for v := range t.twitterClient.GetFriendsIdsAll(nil) {
-		for _, id := range v.Ids {
-			ids = append(ids, id)
-
+	var id int64
+	for ok := true; ok; id, ok = t.getFriendToUnFollow() {
+		if !ok {
+			break
 		}
-	}
-	// unfollow each friend
-	for _, id := range ids {
-		time.Sleep(30 * time.Second)
 		user, err := t.twitterClient.UnfollowUserId(id)
 		if err != nil {
-			log.Println(err.Error())
-			checkExpiredInvalidToken(err)
+			checkBotRestriction(err)
+			continue
 		}
+		t.unfollowFriend(id)
 		log.Printf("[twitter] unfollowing (id:%d, name:%s)\n", user.Id, user.Name)
+		time.Sleep(timeSleepBetweenFollowUnFollow)
+		t.sleep()
 	}
+	log.Println("[twitter] no more friends to unfollow, waiting 6 hours...")
+	time.Sleep(6 * time.Hour)
 	t.unfollowAll()
 }
 
-func (t *twitterBot) followAll() {
-	time.Sleep(30 * time.Second)
-	ids := t.getUserIds("nasa", 0)
-	t.followIds(ids)
-	t.followAll()
-}
-
-func (t *twitterBot) followIds(ids map[int64]struct{}) {
-	for id := range ids {
-		time.Sleep(90 * time.Second)
-		user, err := t.twitterClient.FollowUserId(id, nil)
-		if err != nil {
-			log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
-			if strings.Contains(err.Error(), "You are unable to follow more people at this time") {
-				break
-			}
+func (t *twitterBot) followAll(ids []int64) {
+	for _, id := range ids {
+		if _, ok := t.getFriend(id); ok || t.isFollower(id) {
 			continue
 		}
+		user, err := t.twitterClient.FollowUserId(id, nil)
+		if err != nil && !checkUnableToFollowAtThisTime(err) {
+			checkBotRestriction(err)
+			log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
+			continue
+		}
+		t.addFriend(id)
 		log.Printf("[twitter] following (id:%d, name:%s)\n", user.Id, user.Name)
+		time.Sleep(timeSleepBetweenFollowUnFollow)
+		t.sleep()
 	}
 }
 
-func (t *twitterBot) getUserIds(query string, depth int) map[int64]struct{} {
-	fmt.Printf("[twitter] searching people to follow (q:%s, depth:%d)\n", query, depth)
+func (t *twitterBot) fetchUserIds(query string, maxPage int) []int64 {
+	fmt.Printf("[twitter] searching people to follow (q:%s, depth:%d)\n", query, maxPage)
 	users, err := t.twitterClient.GetUserSearch(query, nil)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
-	ids := map[int64]struct{}{}
-	count := 0
-	for _, user := range users {
-		nextCursor := "-1"
-		currentDepth := 0
-		for {
-			v := url.Values{}
-			if nextCursor != "-1" {
-				v.Set("cursor", nextCursor)
-			}
-			cursor, err := t.twitterClient.GetFollowersUser(user.Id, nil)
-			if err != nil {
-				log.Println(err.Error())
-				continue
-			}
-			for _, v := range cursor.Ids {
-				ids[v] = struct{}{}
-			}
-			if currentDepth >= depth {
-				break
-			}
-			currentDepth++
-			nextCursor = cursor.Next_cursor_str
-			if nextCursor == "0" {
-				break
-			}
+	ids := []int64{}
+	if len(users) == 0 {
+		return nil
+	}
+	// gettings followers of the first user to avoid a too large volume of users
+	user := users[0]
+	nextCursor := "-1"
+	currentPage := 0
+	for {
+		v := url.Values{}
+		if nextCursor != "-1" {
+			v.Set("cursor", nextCursor)
 		}
-		count++
-		if count >= 1 /*getUserSearchAPIRateLimit*/ {
+		cursor, err := t.twitterClient.GetFollowersUser(user.Id, nil)
+		if err != nil {
+			checkBotRestriction(err)
+			continue
+		}
+		for _, v := range cursor.Ids {
+			ids = append(ids, v)
+		}
+		if currentPage >= maxPage {
+			break
+		}
+		currentPage++
+		nextCursor = cursor.Next_cursor_str
+		if nextCursor == "0" {
 			break
 		}
 	}

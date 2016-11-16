@@ -215,7 +215,7 @@ func (n *nasaClient) getDangerousRocks(offset int) ([]object, error) {
 
 func (n *nasaClient) sleep() {
 	if !n.debug {
-		sleep(maxRandTimeSleepBetweenTweets)
+		sleep(maxRandTimeSleepBetweenRequests)
 	}
 }
 
@@ -233,7 +233,7 @@ func (n *nasaClient) fetch(offset int) ([]string, error) {
 	}
 	formatedDiff := []string{}
 	for _, object := range diff {
-		sleep(maxRandTimeSleepBetweenTweets)
+		sleep(maxRandTimeSleepBetweenRequests)
 		closeData := object.CloseApproachData[0]
 		approachDate := parseTime(closeData.CloseApproachDate, nasaTimeFormat)
 		// extract lisible name

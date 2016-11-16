@@ -68,7 +68,6 @@ func getRandom(size int) int {
 
 func sleep(size int) {
 	random := getRandom(size)
-	log.Printf("random sleep: %+v seconds\n", random)
 	time.Sleep(time.Second * time.Duration(random))
 }
 

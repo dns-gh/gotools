@@ -42,18 +42,19 @@ const (
 	twitterFollowersPathFlag = "twitter-followers-path"
 	twitterFriendsPathFlag   = "twitter-friends-path"
 	// TODO save only relevant information on tweets, the file could become too large at some point otherwise
-	twitterTweetsPathFlag     = "twitter-tweets-path"
-	maxRetweetBySearch        = 2
-	maxFavoriteCountWatch     = 2
-	maxTryRetweetCount        = 5
-	retweetTextTag            = "RT @"
-	retweetTextIndex          = ": "
-	tweetHTTPTag              = "http://"
-	getUserSearchAPIRateLimit = 15
+	twitterTweetsPathFlag       = "twitter-tweets-path"
+	maxRetweetBySearch          = 2
+	maxFavoriteCountWatch       = 2
+	maxTryRetweetCount          = 5
+	retweetTextTag              = "RT @"
+	retweetTextIndex            = ": "
+	tweetHTTPTag                = "http://"
+	OneDayInNano          int64 = 86400000000000
 )
 
 var (
-	maxRandTimeSleepBetweenTweets = 120 // seconds
+	maxRandTimeSleepBetweenRequests = 120               // seconds
+	timeSleepBetweenFollowUnFollow  = 300 * time.Second // seconds
 )
 
 func main() {
@@ -62,7 +63,7 @@ func main() {
 	body := flag.String(bodyFlag, "Earth", "[nasa] orbiting body to watch for close asteroids")
 	poll := flag.Duration(pollFrequencyFlag, 12*time.Hour, "[nasa] polling frequency of data")
 	nasaPath := flag.String(nasaPathFlag, "rocks.json", "[nasa] data file path")
-	update := flag.Duration(updateFlag, 10*time.Minute, "[twitter] update frequency of the bot")
+	update := flag.Duration(updateFlag, 30*time.Minute, "[twitter] update frequency of the bot")
 	twitterFollowersPath := flag.String(twitterFollowersPathFlag, "followers.json", "[twitter] data file path for followers")
 	twitterFriendsPath := flag.String(twitterFriendsPathFlag, "friends.json", "[twitter] data file path for friends")
 	twitterTweetsPath := flag.String(twitterTweetsPathFlag, "tweets.json", "[twitter] data file path for tweets")
