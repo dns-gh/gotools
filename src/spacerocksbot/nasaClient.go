@@ -14,6 +14,21 @@ import (
 	"github.com/dns-gh/tojson"
 )
 
+var (
+	asteroidsQualificativeAdjective = []string{
+		"harmless",
+		"nasty",
+		"threatening",
+		"dangerous",
+		"critical",
+		"terrible",
+		"bloody",
+		"destructive",
+		"deadly",
+		"fatal",
+	}
+)
+
 type nasaClient struct {
 	apiKey      string
 	firstOffset int
@@ -219,7 +234,7 @@ func (n *nasaClient) sleep() {
 	}
 }
 
-func (n *nasaClient) fetch(offset int) ([]string, error) {
+func (n *nasaClient) fetchData(offset int) ([]string, error) {
 	log.Println("[nasa] checking nasa rocks...")
 	current, err := n.getDangerousRocks(offset)
 	if err != nil {
@@ -269,4 +284,12 @@ func (n *nasaClient) fetch(offset int) ([]string, error) {
 		formatedDiff = append(formatedDiff, statusMsg)
 	}
 	return formatedDiff, nil
+}
+
+func (n *nasaClient) firstFetch() ([]string, error) {
+	return n.fetchData(n.firstOffset)
+}
+
+func (n *nasaClient) fetch() ([]string, error) {
+	return n.fetchData(n.offset)
 }

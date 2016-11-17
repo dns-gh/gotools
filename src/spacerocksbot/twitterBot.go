@@ -13,23 +13,7 @@ import (
 	"strconv"
 
 	"github.com/ChimeraCoder/anaconda"
-	conf "github.com/dns-gh/flagsconfig"
 	"github.com/dns-gh/tojson"
-)
-
-var (
-	asteroidsQualificativeAdjective = []string{
-		"harmless",
-		"nasty",
-		"threatening",
-		"dangerous",
-		"critical",
-		"terrible",
-		"bloody",
-		"destructive",
-		"deadly",
-		"fatal",
-	}
 )
 
 type twitterUser struct {
@@ -42,6 +26,11 @@ type twitterUsers struct {
 	Ids map[string]*twitterUser `json:"ids"` // map id -> user
 }
 
+type likePolicy struct {
+	auto      bool
+	threshold int
+}
+
 type twitterBot struct {
 	twitterClient *anaconda.TwitterApi
 	updateFreq    time.Duration
@@ -51,12 +40,12 @@ type twitterBot struct {
 	friendsPath   string
 	friends       *twitterUsers
 	tweetsPath    string
-	nasaClient    *nasaClient
 	debug         bool
+	likePolicy    *likePolicy
 	mutex         sync.Mutex
 }
 
-func makeTwitterBot(config *conf.Config, updateFreq time.Duration, followersPath, friendsPath, tweetsPath string, searchQueries []string, debug bool) *twitterBot {
+func makeTwitterBot(updateFreq time.Duration, followersPath, friendsPath, tweetsPath string, autoLike bool, autoThreshold int, searchQueries []string, debug bool) *twitterBot {
 	errorList := []string{}
 	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
 	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
@@ -70,6 +59,7 @@ func makeTwitterBot(config *conf.Config, updateFreq time.Duration, followersPath
 	bot := &twitterBot{
 		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
 		updateFreq:    updateFreq,
+		searchQueries: make([]string, len(searchQueries)),
 		followersPath: followersPath,
 		followers: &twitterUsers{
 			Ids: make(map[string]*twitterUser),
@@ -79,8 +69,11 @@ func makeTwitterBot(config *conf.Config, updateFreq time.Duration, followersPath
 			Ids: make(map[string]*twitterUser),
 		},
 		tweetsPath: tweetsPath,
-		nasaClient: makeNasaClient(config),
 		debug:      debug,
+		likePolicy: &likePolicy{
+			auto:      autoLike,
+			threshold: autoThreshold,
+		},
 	}
 	copy(bot.searchQueries, searchQueries)
 	err := bot.updateFollowers()
@@ -171,44 +164,61 @@ func (t *twitterBot) unfollowFriend(id int64) {
 	}
 }
 
-func (t *twitterBot) tweetNasaData(offset int) error {
-	diff, err := t.nasaClient.fetch(offset)
+func (t *twitterBot) tweetMessageListPeriodically(fetch func() ([]string, error), freq time.Duration) error {
+	ticker := time.NewTicker(freq)
+	defer ticker.Stop()
+	for _ = range ticker.C {
+		err := t.tweetMessageListOnce(fetch)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *twitterBot) tweetMessageListOnce(fetch func() ([]string, error)) error {
+	list, err := fetch()
 	if err != nil {
+		log.Println(err.Error())
 		return err
 	}
-	log.Println("[twitter] tweeting", len(diff), "tweet(s) about rocks...")
-	for _, msg := range diff {
+	for _, msg := range list {
 		tweet, err := t.twitterClient.PostTweet(msg, nil)
 		if err != nil {
 			log.Println(err.Error())
 			continue
 		}
-		log.Println("tweet: (id:", tweet.Id, "):", trunc(tweet.Text))
-		t.like(&tweet)
+		log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
 	}
 	return nil
 }
 
-func (t *twitterBot) updateNasa(first bool) {
-	log.Println("[nasa] fetching data...")
-	offset := t.nasaClient.offset
-	if first {
-		offset = t.nasaClient.firstOffset
-	}
-	err := t.tweetNasaData(offset)
-	if err != nil {
-		log.Println(err.Error())
-	}
-	log.Println("[nasa] fetching data done.")
-}
-
-func (t *twitterBot) pollNasa() {
-	t.updateNasa(true)
-	ticker := time.NewTicker(t.nasaClient.poll)
+func (t *twitterBot) tweetMessagePeriodically(fetch func() (string, error), freq time.Duration) error {
+	ticker := time.NewTicker(freq)
 	defer ticker.Stop()
 	for _ = range ticker.C {
-		t.updateNasa(false)
+		err := t.tweetMessageOnce(fetch)
+		if err != nil {
+			log.Println(err.Error())
+			return err
+		}
 	}
+	return nil
+}
+
+func (t *twitterBot) tweetMessageOnce(fetch func() (string, error)) error {
+	msg, err := fetch()
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+	tweet, err := t.twitterClient.PostTweet(msg, nil)
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+	log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
+	return nil
 }
 
 func (t *twitterBot) update() {
@@ -221,10 +231,6 @@ func (t *twitterBot) update() {
 }
 
 func (t *twitterBot) run() {
-	// polling nasa data
-	go func() {
-		t.pollNasa()
-	}()
 	// update twitter account
 	log.Println("[twitter] launching auto retweet...")
 	t.update()
@@ -329,14 +335,17 @@ func (t *twitterBot) getRelevantTweets() ([]anaconda.Tweet, error) {
 }
 
 func (t *twitterBot) like(tweet *anaconda.Tweet) {
-	if tweet.FavoriteCount > maxFavoriteCountWatch {
+	if !t.likePolicy.auto {
+		return
+	}
+	if tweet.FavoriteCount > t.likePolicy.threshold {
 		_, err := t.twitterClient.Favorite(tweet.Id)
 		if err != nil {
 			log.Printf("[twitter] failed to like tweet (id:%d), error: %v\n", tweet.Id, err)
 		}
 		log.Printf("[twitter] liked tweet (id:%d): %s\n", tweet.Id, trunc(tweet.Text))
 	} else if tweet.RetweetedStatus != nil &&
-		tweet.RetweetedStatus.FavoriteCount > maxFavoriteCountWatch {
+		tweet.RetweetedStatus.FavoriteCount > t.likePolicy.threshold {
 		t.like(tweet.RetweetedStatus)
 	}
 }

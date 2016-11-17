@@ -91,9 +91,14 @@ func main() {
 	log.Println("[twitter] twitter-tweets-path:", *twitterTweetsPath)
 	log.Println("[twitter] debug:", *debug)
 
-	bot := makeTwitterBot(config, *update, *twitterFollowersPath, *twitterFriendsPath,
-		*twitterTweetsPath, searchTweetQueries, *debug)
+	client := makeNasaClient(config)
+	bot := makeTwitterBot(*update, *twitterFollowersPath, *twitterFriendsPath,
+		*twitterTweetsPath, true, maxFavoriteCountWatch, searchTweetQueries, *debug)
 	defer bot.close()
+	go func() {
+		bot.tweetMessageListOnce(client.firstFetch)
+		bot.tweetMessageListPeriodically(client.fetch, client.poll)
+	}()
 	log.Println(" --- launching bot ---")
 	bot.run()
 }
