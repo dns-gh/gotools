@@ -33,8 +33,6 @@ type likePolicy struct {
 
 type twitterBot struct {
 	twitterClient *anaconda.TwitterApi
-	updateFreq    time.Duration
-	searchQueries []string
 	followersPath string
 	followers     *twitterUsers
 	friendsPath   string
@@ -43,9 +41,10 @@ type twitterBot struct {
 	debug         bool
 	likePolicy    *likePolicy
 	mutex         sync.Mutex
+	quit          sync.WaitGroup
 }
 
-func makeTwitterBot(updateFreq time.Duration, followersPath, friendsPath, tweetsPath string, autoLike bool, autoThreshold int, searchQueries []string, debug bool) *twitterBot {
+func makeTwitterBot(followersPath, friendsPath, tweetsPath string, autoLike bool, autoThreshold int, debug bool) *twitterBot {
 	errorList := []string{}
 	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
 	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
@@ -58,8 +57,6 @@ func makeTwitterBot(updateFreq time.Duration, followersPath, friendsPath, tweets
 	anaconda.SetConsumerSecret(consumerSecret)
 	bot := &twitterBot{
 		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
-		updateFreq:    updateFreq,
-		searchQueries: make([]string, len(searchQueries)),
 		followersPath: followersPath,
 		followers: &twitterUsers{
 			Ids: make(map[string]*twitterUser),
@@ -75,7 +72,6 @@ func makeTwitterBot(updateFreq time.Duration, followersPath, friendsPath, tweets
 			threshold: autoThreshold,
 		},
 	}
-	copy(bot.searchQueries, searchQueries)
 	err := bot.updateFollowers()
 	if err != nil {
 		log.Println(err.Error())
@@ -98,7 +94,11 @@ func makeTwitterBot(updateFreq time.Duration, followersPath, friendsPath, tweets
 	return bot
 }
 
-func (t *twitterBot) close() {
+func (t *twitterBot) Wait() {
+	t.quit.Wait()
+}
+
+func (t *twitterBot) Close() {
 	t.twitterClient.Close()
 }
 
@@ -164,23 +164,11 @@ func (t *twitterBot) unfollowFriend(id int64) {
 	}
 }
 
-func (t *twitterBot) tweetMessageListPeriodically(fetch func() ([]string, error), freq time.Duration) error {
-	ticker := time.NewTicker(freq)
-	defer ticker.Stop()
-	for _ = range ticker.C {
-		err := t.tweetMessageListOnce(fetch)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (t *twitterBot) tweetMessageListOnce(fetch func() ([]string, error)) error {
+func (t *twitterBot) tweetSliceOnce(fetch func() ([]string, error)) {
 	list, err := fetch()
 	if err != nil {
 		log.Println(err.Error())
-		return err
+		return
 	}
 	for _, msg := range list {
 		tweet, err := t.twitterClient.PostTweet(msg, nil)
@@ -190,55 +178,103 @@ func (t *twitterBot) tweetMessageListOnce(fetch func() ([]string, error)) error 
 		}
 		log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
 	}
-	return nil
 }
 
-func (t *twitterBot) tweetMessagePeriodically(fetch func() (string, error), freq time.Duration) error {
-	ticker := time.NewTicker(freq)
-	defer ticker.Stop()
-	for _ = range ticker.C {
-		err := t.tweetMessageOnce(fetch)
+func (t *twitterBot) TweetSliceOnce(fetch func() ([]string, error)) {
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		list, err := fetch()
 		if err != nil {
 			log.Println(err.Error())
-			return err
+			return
 		}
-	}
-	return nil
+		for _, msg := range list {
+			tweet, err := t.twitterClient.PostTweet(msg, nil)
+			if err != nil {
+				log.Println(err.Error())
+				continue
+			}
+			log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
+		}
+	}()
 }
 
-func (t *twitterBot) tweetMessageOnce(fetch func() (string, error)) error {
+func (t *twitterBot) TweetSlicePeriodically(fetch func() ([]string, error), freq time.Duration) {
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		ticker := time.NewTicker(freq)
+		defer ticker.Stop()
+		for _ = range ticker.C {
+			t.tweetSliceOnce(fetch)
+		}
+	}()
+}
+
+func (t *twitterBot) tweetOnce(fetch func() (string, error)) {
 	msg, err := fetch()
 	if err != nil {
 		log.Println(err.Error())
-		return err
+		return
 	}
 	tweet, err := t.twitterClient.PostTweet(msg, nil)
 	if err != nil {
 		log.Println(err.Error())
-		return err
+		return
 	}
 	log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
-	return nil
 }
 
-func (t *twitterBot) update() {
-	log.Println("[twitter] updating...")
-	err := t.checkRetweet()
+func (t *twitterBot) TweetOnce(fetch func() (string, error)) {
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		t.tweetOnce(fetch)
+	}()
+}
+
+func (t *twitterBot) TweetPeriodically(fetch func() (string, error), freq time.Duration) {
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		ticker := time.NewTicker(freq)
+		defer ticker.Stop()
+		for _ = range ticker.C {
+			t.tweetOnce(fetch)
+		}
+	}()
+}
+
+func (t *twitterBot) retweetOnce(queries []string) {
+	err := t.autoRetweet(queries)
 	if err != nil {
 		log.Println(err.Error())
 	}
-	log.Println("[twitter] updating... done.")
 }
 
-func (t *twitterBot) run() {
-	// update twitter account
-	log.Println("[twitter] launching auto retweet...")
-	t.update()
-	ticker := time.NewTicker(t.updateFreq)
-	defer ticker.Stop()
-	for _ = range ticker.C {
-		t.update()
-	}
+func (t *twitterBot) RetweetOnce(searchQueries []string) {
+	queries := make([]string, len(searchQueries))
+	copy(queries, searchQueries)
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		t.retweetOnce(queries)
+	}()
+}
+
+func (t *twitterBot) RetweetPeriodically(searchQueries []string, freq time.Duration) {
+	queries := make([]string, len(searchQueries))
+	copy(queries, searchQueries)
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		ticker := time.NewTicker(freq)
+		defer ticker.Stop()
+		for _ = range ticker.C {
+			t.retweetOnce(queries)
+		}
+	}()
 }
 
 func getEnv(errorList []string, key string) string {
@@ -249,7 +285,6 @@ func getEnv(errorList []string, key string) string {
 	return value
 }
 
-// TODO factorize with load, merge and update ?
 func (t *twitterBot) loadTweets() ([]anaconda.Tweet, error) {
 	tweets := &[]anaconda.Tweet{}
 	if _, err := os.Stat(t.tweetsPath); os.IsNotExist(err) {
@@ -269,7 +304,6 @@ func (t *twitterBot) getOriginalText(tweet *anaconda.Tweet) string {
 		if len(tab) != 2 {
 			log.Println("[twitter] error parsing a tweet text:", text)
 			return text
-			// TODO do something
 		}
 		text = tab[1]
 		if strings.Contains(text, tweetHTTPTag) {
@@ -277,7 +311,6 @@ func (t *twitterBot) getOriginalText(tweet *anaconda.Tweet) string {
 			if len(subtab) > 2 {
 				log.Println("[twitter] error parsing a sub tweet text:", text)
 				return text
-				// TODO do something
 			}
 			text = subtab[0]
 		}
@@ -323,15 +356,6 @@ func (t *twitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet
 		}
 	}
 	return stripped
-}
-
-func (t *twitterBot) getRelevantTweets() ([]anaconda.Tweet, error) {
-	query := getRandomElement(t.searchQueries)
-	log.Println("[twitter] searching with query:", query)
-	v := url.Values{}
-	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
-	results, _ := t.twitterClient.GetSearch(query, v)
-	return results.Statuses, nil
 }
 
 func (t *twitterBot) like(tweet *anaconda.Tweet) {
@@ -400,19 +424,24 @@ func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err e
 	return rt, err
 }
 
-func (t *twitterBot) getTweets(previous []anaconda.Tweet) ([]anaconda.Tweet, error) {
+func (t *twitterBot) getTweets(queries []string, previous []anaconda.Tweet) ([]anaconda.Tweet, error) {
 	log.Println("[twitter] checking tweets to retweet...")
-	current, err := t.getRelevantTweets()
+	query := getRandomElement(queries)
+	log.Println("[twitter] searching with query:", query)
+	v := url.Values{}
+	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
+	results, err := t.twitterClient.GetSearch(query, v)
 	if err != nil {
 		return nil, err
 	}
+	current := results.Statuses
 	current = t.removeDuplicates(current)
 	current = t.takeDifference(previous, current)
 	log.Println("[twitter] found", len(current), "tweet(s) matching pattern")
 	return current, nil
 }
 
-func (t *twitterBot) checkRetweet() error {
+func (t *twitterBot) autoRetweet(queries []string) error {
 	count := 0
 	previous, err := t.loadTweets()
 	if err != nil {
@@ -420,7 +449,7 @@ func (t *twitterBot) checkRetweet() error {
 	}
 	for {
 		t.sleep()
-		tweets, err := t.getTweets(previous)
+		tweets, err := t.getTweets(queries, previous)
 		if err != nil {
 			return err
 		}
