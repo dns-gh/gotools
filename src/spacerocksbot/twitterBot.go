@@ -16,6 +16,10 @@ import (
 	"github.com/dns-gh/tojson"
 )
 
+const (
+	defaultAutoLikeThreshold = 1000
+)
+
 type twitterUser struct {
 	Timestamp int64 `json:"timestamp"`
 	Follow    bool  `json:"follow"`
@@ -44,7 +48,7 @@ type twitterBot struct {
 	quit          sync.WaitGroup
 }
 
-func makeTwitterBot(followersPath, friendsPath, tweetsPath string, autoLike bool, autoThreshold int, debug bool) *twitterBot {
+func makeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *twitterBot {
 	errorList := []string{}
 	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
 	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
@@ -68,8 +72,8 @@ func makeTwitterBot(followersPath, friendsPath, tweetsPath string, autoLike bool
 		tweetsPath: tweetsPath,
 		debug:      debug,
 		likePolicy: &likePolicy{
-			auto:      autoLike,
-			threshold: autoThreshold,
+			auto:      false,
+			threshold: 1000,
 		},
 	}
 	err := bot.updateFollowers()
@@ -89,6 +93,18 @@ func (t *twitterBot) Wait() {
 
 func (t *twitterBot) Close() {
 	t.twitterClient.Close()
+}
+
+func (t *twitterBot) EnableAutoLike(threshold int) {
+	log.Println("[twitter] auto like enabled")
+	t.likePolicy.auto = true
+	t.likePolicy.threshold = threshold
+}
+
+func (t *twitterBot) DisableAutoLike() {
+	log.Println("[twitter] auto like disabled")
+	t.likePolicy.auto = false
+	t.likePolicy.threshold = defaultAutoLikeThreshold
 }
 
 func (t *twitterBot) isFollower(id int64) bool {
