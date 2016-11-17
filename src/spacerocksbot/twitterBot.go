@@ -18,60 +18,6 @@ import (
 )
 
 var (
-	searchTweetQueries = []string{
-		"nasa mars",
-		"nasa simulation",
-		"nasa flight",
-		"space flight",
-		"space exploration",
-		"space mars",
-		"space atmosphere",
-		"space traveller",
-		"space observatory",
-		"solar system",
-		"journey mars",
-		"mars colonization",
-		"mars take off",
-		"moon mining",
-		"supermoon event space",
-		"asteroid private",
-		"asteroid companies",
-		"asteroid physics",
-		"asteroid science",
-		"asteroid take off",
-		"asteroids solar system",
-		"asteroid universe theories",
-		"asteroids comets",
-		"asteroids belt",
-		"asteroids ceres",
-		"asteroids orbit",
-		"asteroids mercury",
-		"asteroids venus",
-		"asteroids earth",
-		"asteroids mars",
-		"asteroids jupiter",
-		"asteroids saturn",
-		"asteroids uranus",
-		"asteroids neptune",
-		"asteroids around galaxy",
-		"asteroids galactic tour",
-		"asteroids universe",
-		"asteroids space",
-		"asteroids nasa",
-		"asteroids deadly",
-		"asteroids watch danger",
-		"asteroids end world",
-		"asteroids close approach",
-		"asteroids strike",
-		"asteroids damages earth",
-		"asteroid impact simulation",
-		"asteroid impact",
-		"asteroids threat",
-		"asteroids exploitation",
-		"asteroids mining",
-		"asteroid discovery",
-		"Near-Earth Object Program",
-	}
 	asteroidsQualificativeAdjective = []string{
 		"harmless",
 		"nasty",
@@ -99,6 +45,7 @@ type twitterUsers struct {
 type twitterBot struct {
 	twitterClient *anaconda.TwitterApi
 	updateFreq    time.Duration
+	searchQueries []string
 	followersPath string
 	followers     *twitterUsers
 	friendsPath   string
@@ -109,7 +56,7 @@ type twitterBot struct {
 	mutex         sync.Mutex
 }
 
-func makeTwitterBot(config *conf.Config) *twitterBot {
+func makeTwitterBot(config *conf.Config, updateFreq time.Duration, followersPath, friendsPath, tweetsPath string, searchQueries []string, debug bool) *twitterBot {
 	errorList := []string{}
 	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
 	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
@@ -122,19 +69,20 @@ func makeTwitterBot(config *conf.Config) *twitterBot {
 	anaconda.SetConsumerSecret(consumerSecret)
 	bot := &twitterBot{
 		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
-		updateFreq:    parseDuration(config.Get(updateFlag)),
-		followersPath: config.Get(twitterFollowersPathFlag),
+		updateFreq:    updateFreq,
+		followersPath: followersPath,
 		followers: &twitterUsers{
 			Ids: make(map[string]*twitterUser),
 		},
-		friendsPath: config.Get(twitterFriendsPathFlag),
+		friendsPath: friendsPath,
 		friends: &twitterUsers{
 			Ids: make(map[string]*twitterUser),
 		},
-		tweetsPath: config.Get(twitterTweetsPathFlag),
+		tweetsPath: tweetsPath,
 		nasaClient: makeNasaClient(config),
-		debug:      parseBool(config.Get(debugFlag)),
+		debug:      debug,
 	}
+	copy(bot.searchQueries, searchQueries)
 	err := bot.updateFollowers()
 	if err != nil {
 		log.Println(err.Error())
@@ -372,7 +320,7 @@ func (t *twitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet
 }
 
 func (t *twitterBot) getRelevantTweets() ([]anaconda.Tweet, error) {
-	query := getRandomElement(searchTweetQueries)
+	query := getRandomElement(t.searchQueries)
 	log.Println("[twitter] searching with query:", query)
 	v := url.Values{}
 	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))

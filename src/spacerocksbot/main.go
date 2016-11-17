@@ -91,7 +91,8 @@ func main() {
 	log.Println("[twitter] twitter-tweets-path:", *twitterTweetsPath)
 	log.Println("[twitter] debug:", *debug)
 
-	bot := makeTwitterBot(config)
+	bot := makeTwitterBot(config, *update, *twitterFollowersPath, *twitterFriendsPath,
+		*twitterTweetsPath, searchTweetQueries, *debug)
 	defer bot.close()
 	log.Println(" --- launching bot ---")
 	bot.run()
