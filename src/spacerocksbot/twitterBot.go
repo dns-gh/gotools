@@ -63,7 +63,7 @@ var (
 		"asteroids end world",
 		"asteroids close approach",
 		"asteroids strike",
-		"asteroids damages on earth",
+		"asteroids damages earth",
 		"asteroid impact simulation",
 		"asteroid impact",
 		"asteroids threat",
@@ -399,6 +399,12 @@ func (t *twitterBot) sleep() {
 	}
 }
 
+func (t *twitterBot) maybeSleep(chance, totalChance, min, max int) {
+	if !t.debug {
+		maybeSleepMinMax(chance, totalChance, min, max)
+	}
+}
+
 func (t *twitterBot) unfollowUser(user *anaconda.User) {
 	unfollowed, err := t.twitterClient.UnfollowUserId(user.Id)
 	if err != nil {
@@ -586,6 +592,7 @@ func (t *twitterBot) unfollowAll() {
 		log.Printf("[twitter] unfollowing (id:%d, name:%s)\n", user.Id, user.Name)
 		time.Sleep(timeSleepBetweenFollowUnFollow)
 		t.sleep()
+		t.maybeSleep(1, 10, 2500, 5000)
 	}
 	log.Println("[twitter] no more friends to unfollow, waiting 6 hours...")
 	time.Sleep(6 * time.Hour)
@@ -607,6 +614,7 @@ func (t *twitterBot) followAll(ids []int64) {
 		log.Printf("[twitter] following (id:%d, name:%s)\n", user.Id, user.Name)
 		time.Sleep(timeSleepBetweenFollowUnFollow)
 		t.sleep()
+		t.maybeSleep(1, 5, 5000, 10000)
 	}
 }
 

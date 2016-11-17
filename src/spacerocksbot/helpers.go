@@ -62,13 +62,39 @@ func parseDuration(value string) time.Duration {
 	return parsed
 }
 
-func getRandom(size int) int {
-	return rand.New(rand.NewSource(time.Now().UnixNano())).Intn(size)
+func getRandom(duration int) int {
+	return rand.New(rand.NewSource(time.Now().UnixNano())).Intn(duration)
 }
 
-func sleep(size int) {
-	random := getRandom(size)
+func sleep(duration int) {
+	random := getRandom(duration)
 	time.Sleep(time.Second * time.Duration(random))
+}
+
+func sleepMinMax(min, max int) {
+	if max < min {
+		temp := min
+		min = max
+		max = temp
+	} else if max == min {
+		max = min + 1
+	}
+	random := getRandom(max - min)
+	time.Sleep(time.Second * time.Duration(min+random))
+}
+
+func maybeSleepMinMax(chance, totalChance, min, max int) {
+	if maybe(chance, totalChance) {
+		sleepMinMax(min, max)
+	}
+}
+
+func maybe(chance, totalChance int) bool {
+	random := getRandom(totalChance)
+	if random <= chance {
+		return true
+	}
+	return false
 }
 
 func getRandomElement(tab []string) string {
