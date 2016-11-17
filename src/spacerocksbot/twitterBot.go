@@ -74,23 +74,12 @@ func makeTwitterBot(followersPath, friendsPath, tweetsPath string, autoLike bool
 	}
 	err := bot.updateFollowers()
 	if err != nil {
-		log.Println(err.Error())
+		log.Fatalln(err.Error())
 	}
 	err = bot.updateFriends()
 	if err != nil {
-		log.Println(err.Error())
+		log.Fatalln(err.Error())
 	}
-	go func() {
-		log.Println("[twitter] launching auto unfollow...")
-		bot.unfollowAll()
-		log.Println("[twitter] - WARNING - auto unfollow disabled")
-	}()
-	go func() {
-		log.Println("[twitter] launching auto follow...")
-		ids := bot.fetchUserIds("nasa", 0)
-		bot.followAll(ids)
-		log.Println("[twitter] - WARNING - auto follow disabled")
-	}()
 	return bot
 }
 
@@ -146,18 +135,6 @@ func (t *twitterBot) addFriend(id int64) {
 		Timestamp: time.Now().UnixNano(),
 		Follow:    true,
 	}
-	err := tojson.Save(t.friendsPath, t.friends)
-	if err != nil {
-		log.Fatalln(err)
-	}
-}
-
-// UnfollowFriend flags the friend as not followed anymore.
-// We do not remove friends from database.
-func (t *twitterBot) unfollowFriend(id int64) {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	t.friends.Ids[strconv.FormatInt(id, 10)].Follow = false
 	err := tojson.Save(t.friendsPath, t.friends)
 	if err != nil {
 		log.Fatalln(err)
@@ -386,6 +363,17 @@ func (t *twitterBot) maybeSleep(chance, totalChance, min, max int) {
 	}
 }
 
+func checkBotRestriction(err error) {
+	if err != nil {
+		strErr := err.Error()
+		if strings.Contains(strErr, "Invalid or expired token") ||
+			strings.Contains(strErr, "this account is temporarily locked") {
+			log.Fatalln(err)
+		}
+		log.Println(strErr)
+	}
+}
+
 func (t *twitterBot) unfollowUser(user *anaconda.User) {
 	unfollowed, err := t.twitterClient.UnfollowUserId(user.Id)
 	if err != nil {
@@ -393,6 +381,18 @@ func (t *twitterBot) unfollowUser(user *anaconda.User) {
 		log.Printf("[twitter] failed to unfollow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
 	}
 	log.Printf("[twitter] unfollowing user (id:%d, name:%s)\n", unfollowed.Id, unfollowed.Name)
+}
+
+func checkUnableToFollowAtThisTime(err error) bool {
+	if err != nil {
+		if strings.Contains(err.Error(), "You are unable to follow more people at this time") {
+			log.Println("unable to follow at this time, waiting 15min...,", err.Error())
+			time.Sleep(15 * time.Minute)
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 func (t *twitterBot) followUser(user *anaconda.User) {
@@ -406,7 +406,6 @@ func (t *twitterBot) followUser(user *anaconda.User) {
 
 func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err error) {
 	for _, tweet := range current {
-		log.Printf("[twitter] trying to retweet tweet id:%d\n", tweet.Id)
 		t.like(&tweet)
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
 		if err != nil {
@@ -540,27 +539,16 @@ func (t *twitterBot) updateFriends() error {
 	return nil
 }
 
-func checkBotRestriction(err error) {
+// unfollowFriend flags the friend as not followed anymore.
+// We do not remove friends from database.
+func (t *twitterBot) unfollowFriend(id int64) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.friends.Ids[strconv.FormatInt(id, 10)].Follow = false
+	err := tojson.Save(t.friendsPath, t.friends)
 	if err != nil {
-		strErr := err.Error()
-		if strings.Contains(strErr, "Invalid or expired token") ||
-			strings.Contains(strErr, "this account is temporarily locked") {
-			log.Fatalln(err)
-		}
-		log.Println(strErr)
+		log.Fatalln(err)
 	}
-}
-
-func checkUnableToFollowAtThisTime(err error) bool {
-	if err != nil {
-		if strings.Contains(err.Error(), "You are unable to follow more people at this time") {
-			log.Println("unable to follow at this time, waiting 15min...,", err.Error())
-			time.Sleep(15 * time.Minute)
-			return true
-		}
-		return false
-	}
-	return false
 }
 
 func (t *twitterBot) unfollowAll() {
@@ -580,9 +568,19 @@ func (t *twitterBot) unfollowAll() {
 		t.sleep()
 		t.maybeSleep(1, 10, 2500, 5000)
 	}
-	log.Println("[twitter] no more friends to unfollow, waiting 6 hours...")
-	time.Sleep(6 * time.Hour)
+	log.Println("[twitter] no more friends to unfollow, waiting 3 hours...")
+	time.Sleep(3 * time.Hour)
 	t.unfollowAll()
+}
+
+func (t *twitterBot) AutoUnfollowFriends() {
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		log.Println("[twitter] launching auto unfollow...")
+		t.unfollowAll()
+		log.Println("[twitter] [WARNING] - auto unfollow disabled")
+	}()
 }
 
 func (t *twitterBot) followAll(ids []int64) {
@@ -605,7 +603,6 @@ func (t *twitterBot) followAll(ids []int64) {
 }
 
 func (t *twitterBot) fetchUserIds(query string, maxPage int) []int64 {
-	fmt.Printf("[twitter] searching people to follow (q:%s, depth:%d)\n", query, maxPage)
 	users, err := t.twitterClient.GetUserSearch(query, nil)
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -614,10 +611,10 @@ func (t *twitterBot) fetchUserIds(query string, maxPage int) []int64 {
 	if len(users) == 0 {
 		return nil
 	}
-	// gettings followers of the first user to avoid a too large volume of users
+	// gettings followers of the first user found
 	user := users[0]
 	nextCursor := "-1"
-	currentPage := 0
+	currentPage := 1
 	for {
 		v := url.Values{}
 		if nextCursor != "-1" {
@@ -641,4 +638,14 @@ func (t *twitterBot) fetchUserIds(query string, maxPage int) []int64 {
 		}
 	}
 	return ids
+}
+
+func (t *twitterBot) AutoFollowFollowersOf(query string, maxPage int) {
+	t.quit.Add(1)
+	go func() {
+		defer t.quit.Done()
+		log.Printf("[twitter] launching auto follow with '%s' over %d page(s)...\n", query, maxPage)
+		t.followAll(t.fetchUserIds(query, maxPage))
+		log.Println("[twitter] [WARNING] - auto follow disabled")
+	}()
 }

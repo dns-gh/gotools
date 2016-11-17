@@ -95,12 +95,12 @@ func main() {
 	bot := makeTwitterBot(*twitterFollowersPath, *twitterFriendsPath,
 		*twitterTweetsPath, true, maxFavoriteCountWatch, *debug)
 	defer bot.Close()
-	go func() {
-		log.Println(" --- making nasa client ---")
-		client := makeNasaClient(config)
-		bot.TweetSliceOnce(client.firstFetch)
-		bot.TweetSlicePeriodically(client.fetch, client.poll)
-	}()
+	log.Println(" --- making nasa client ---")
+	client := makeNasaClient(config)
+	bot.TweetSliceOnce(client.firstFetch)
+	bot.TweetSlicePeriodically(client.fetch, client.poll)
 	bot.RetweetPeriodically(searchTweetQueries, *update)
+	bot.AutoUnfollowFriends()
+	bot.AutoFollowFollowersOf("nasa", 1)
 	bot.Wait()
 }
