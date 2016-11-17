@@ -321,12 +321,12 @@ func (t *twitterBot) takeDifference(previous, current []anaconda.Tweet) []anacon
 	}
 	for _, v := range current {
 		if _, ok := addedByID[v.Id]; ok {
-			log.Printf("[twitter] found a duplicate (same id) from database id:%d, text:%s", v.Id, v.Text)
+			log.Printf("[twitter] found a duplicate (same id) from database id:%d, text:%s", v.Id, trunc(v.Text))
 			continue
 		}
 		text := t.getOriginalText(&v)
 		if _, ok := addedByText[text]; ok {
-			log.Printf("[twitter] found a duplicate (same original text) from database id:%d, text:%s", v.Id, v.Text)
+			log.Printf("[twitter] found a duplicate (same original text) from database id:%d, text:%s", v.Id, trunc(v.Text))
 			continue
 		}
 		addedByID[v.Id] = struct{}{}
@@ -345,7 +345,7 @@ func (t *twitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet
 			temp[text] = struct{}{}
 			stripped = append(stripped, tweet)
 		} else {
-			log.Printf("[twitter] found a duplicate (id:%d), text:%s", tweet.Id, tweet.Text)
+			log.Printf("[twitter] found a duplicate (id:%d), text:%s", tweet.Id, trunc(tweet.Text))
 		}
 	}
 	return stripped

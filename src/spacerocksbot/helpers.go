@@ -101,6 +101,8 @@ func getRandomElement(tab []string) string {
 	return tab[getRandom(len(tab))]
 }
 
+// truncate text to a hardcoded length.
+// It helps to visualize logs in the console.
 func trunc(text string) string {
 	length := len(text)
 	maxLength := 90
