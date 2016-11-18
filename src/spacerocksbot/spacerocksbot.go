@@ -47,6 +47,7 @@ const (
 	// TODO save only relevant information on tweets, the file could become too large at some point otherwise
 	twitterTweetsPathFlag = "twitter-tweets-path"
 	maxFavoriteCountWatch = 2
+	maxTryRetweet         = 5
 )
 
 var (
@@ -88,7 +89,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
-	log.Println("logging to:", logPath)
+	log.Println("[info] logging to:", logPath)
 	log.Println("[nasa] first-offset:", *firstOffset)
 	log.Println("[nasa] offset:", *offset)
 	log.Println("[nasa] body:", *body)
@@ -99,15 +100,13 @@ func main() {
 	log.Println("[twitter] twitter-friends-path:", *twitterFriendsPath)
 	log.Println("[twitter] twitter-tweets-path:", *twitterTweetsPath)
 	log.Println("[twitter] debug:", *debug)
-
-	log.Println(" --- making and launching twitter bot ---")
 	bot := twbot.MakeTwitterBot(*twitterFollowersPath, *twitterFriendsPath,
 		*twitterTweetsPath, *debug)
 	defer bot.Close()
-	log.Println(" --- making nasa client ---")
 	client := nasaclient.MakeNasaClient(*firstOffset, *offset, *poll,
 		*nasaPath, *body, *debug)
-	bot.EnableAutoLike(maxFavoriteCountWatch)
+	bot.SetLikePolicy(true, maxFavoriteCountWatch)
+	bot.SetRetweetPolicy(maxTryRetweet, true)
 	bot.TweetSliceOnceAsync(client.FirstFetch)
 	bot.TweetSlicePeriodicallyAsync(client.Fetch, client.GetPoll())
 	bot.RetweetPeriodicallyAsync(searchTweetQueries, *update)

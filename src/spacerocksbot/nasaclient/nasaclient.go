@@ -58,6 +58,7 @@ func (n *NasaClient) GetPoll() time.Duration {
 // MakeNasaClient creates a web client to make http request
 // to the Neo Nasa API: https://api.nasa.gov/api.html#NeoWS
 func MakeNasaClient(firstOffset, offset int, poll time.Duration, path, body string, debug bool) *NasaClient {
+	log.Println("[nasa] making nasa client")
 	apiKey := os.Getenv("NASA_API_KEY")
 	if len(apiKey) == 0 {
 		apiKey = nasaAPIDefaultKey

@@ -20,7 +20,6 @@ import (
 const (
 	defaultAutoLikeThreshold              = 1000
 	maxRetweetBySearch                    = 2
-	maxTryRetweetCount                    = 5
 	retweetTextTag                        = "RT @"
 	retweetTextIndex                      = ": "
 	tweetHTTPTag                          = "http://"
@@ -44,6 +43,11 @@ type likePolicy struct {
 	threshold int
 }
 
+type retweetPolicy struct {
+	maxTry int
+	like   bool
+}
+
 // TwitterBot represents the twitter bot:
 // * The database is made of 3 files: followers, friends and tweets.
 // * They are here to ensure to:
@@ -51,7 +55,10 @@ type likePolicy struct {
 //   - not remove as friend a non friend
 //   - not retweet a tweet already retweeted
 //   - keep track of friends to remove them properly at a specific time if wanted
-// * The like policy allow to automatically likes tweets that are already liked.
+// * The like policy allows to automatically likes tweets that are already liked above a threshold.
+// * The retweet policy allows to try to retweet 'maxTry' times when looping through
+//   a list of tweets to retweet. The 'likeRetweet' parameter controls the ability to like the tweet
+//   or the retweet using the like policy.
 // * The 'debug' mode creates more logs and remove all sleeps between API twitter calls.
 type TwitterBot struct {
 	twitterClient *anaconda.TwitterApi
@@ -62,12 +69,14 @@ type TwitterBot struct {
 	tweetsPath    string
 	debug         bool
 	likePolicy    *likePolicy
+	retweetPolicy *retweetPolicy
 	mutex         sync.Mutex
 	quit          sync.WaitGroup
 }
 
 // MakeTwitterBot creates a twitter bot
 func MakeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *TwitterBot {
+	log.Println("[twitter] making twitter bot")
 	errorList := []string{}
 	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
 	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
@@ -94,6 +103,10 @@ func MakeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *
 			auto:      false,
 			threshold: 1000,
 		},
+		retweetPolicy: &retweetPolicy{
+			maxTry: 5,
+			like:   true,
+		},
 	}
 	err := bot.updateFollowers()
 	if err != nil {
@@ -116,18 +129,18 @@ func (t *TwitterBot) Close() {
 	t.twitterClient.Close()
 }
 
-// EnableAutoLike enables auto liking of tweets/retweets
-func (t *TwitterBot) EnableAutoLike(threshold int) {
-	log.Println("[twitter] auto like enabled")
-	t.likePolicy.auto = true
+// SetLikePolicy sets the like policy
+func (t *TwitterBot) SetLikePolicy(auto bool, threshold int) {
+	log.Printf("[twitter] setting like policy -> auto: %t, threshold: %d\n", auto, threshold)
+	t.likePolicy.auto = auto
 	t.likePolicy.threshold = threshold
 }
 
-// DisableAutoLike disables auto liking of tweets/retweets
-func (t *TwitterBot) DisableAutoLike() {
-	log.Println("[twitter] auto like disabled")
-	t.likePolicy.auto = false
-	t.likePolicy.threshold = defaultAutoLikeThreshold
+// SetRetweetPolicy sets the retweet policy
+func (t *TwitterBot) SetRetweetPolicy(maxTry int, like bool) {
+	log.Printf("[twitter] setting retweet policy -> maxTry: %d, like: %t\n", maxTry, like)
+	t.retweetPolicy.maxTry = maxTry
+	t.retweetPolicy.like = like
 }
 
 // TweetSliceOnce tweets the slice returned by the given 'fetch' callback.
@@ -239,7 +252,7 @@ func (t *TwitterBot) TweetPeriodicallyAsync(fetch func() (string, error), freq t
 	}()
 }
 
-// RetweetOnce retweets randomly, with a maximum of 'maxTryRetweetCount' tries,
+// RetweetOnce retweets randomly, with a maximum of 'retweetPolicy.maxTry' tries,
 // a tweet matching one element of the input queries slice.
 // It returns an error if the loading of tweets in database failed
 // or if the retweet itself failed.
@@ -252,7 +265,7 @@ func (t *TwitterBot) RetweetOnce(queries []string) error {
 }
 
 // RetweetOnceAsync retweets asynchronously and randomly, with a maximum of
-// 'maxTryRetweetCount' tries, a tweet matching one element of the input queries slice.
+// 'retweetPolicy.maxTry' tries, a tweet matching one element of the input queries slice.
 // It logs errors if the loading of tweets in database failed
 // or if the retweets itself failed.
 func (t *TwitterBot) RetweetOnceAsync(searchQueries []string) {
@@ -269,7 +282,7 @@ func (t *TwitterBot) RetweetOnceAsync(searchQueries []string) {
 }
 
 // RetweetPeriodicallyAsync retweets asynchronously, periodically and randomly, with a maximum of
-// 'maxTryRetweetCount' tries, a tweet matching one element of the input queries slice.
+// 'retweetPolicy.maxTry' tries, a tweet matching one element of the input queries slice.
 // The retweet frequencies is set up by the given 'freq' input parameter.
 // It logs errors if the loading of tweets in database failed
 // or if the retweets itself failed.
@@ -477,7 +490,9 @@ func (t *TwitterBot) followUser(user *anaconda.User) {
 // It returns an error if no retweet has been possible.
 func (t *TwitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err error) {
 	for _, tweet := range current {
-		t.like(&tweet)
+		if t.retweetPolicy.like {
+			t.like(&tweet)
+		}
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
 		if err != nil {
 			t.print(fmt.Sprintf("[twitter] failed to retweet tweet (id:%d), error: %v\n", tweet.Id, err))
@@ -485,7 +500,9 @@ func (t *TwitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err e
 			continue
 		}
 		rt = retweet
-		t.like(&rt)
+		if t.retweetPolicy.like {
+			t.like(&rt)
+		}
 		log.Printf("[twitter] retweet (rid:%d, id:%d)\n", rt.Id, tweet.Id)
 		t.followUser(&tweet.User)
 		return rt, err
@@ -524,11 +541,11 @@ func (t *TwitterBot) autoRetweet(queries []string) error {
 		}
 		retweeted, err := t.retweet(tweets)
 		if err != nil {
-			if count < maxTryRetweetCount {
+			if count < t.retweetPolicy.maxTry {
 				count++
 				continue
 			} else {
-				return fmt.Errorf("[twitter] unable to retweet something after %d tries\n", maxTryRetweetCount)
+				return fmt.Errorf("[twitter] unable to retweet something after %d tries\n", t.retweetPolicy.maxTry)
 			}
 		}
 		previous = append(previous, retweeted)
@@ -610,7 +627,7 @@ func (t *TwitterBot) updateFriends() error {
 }
 
 // unfollowFriend flags the friend as not followed anymore.
-// We do not remove friends from database.
+// We do not remove friends from database, we just flag them as non friend.
 func (t *TwitterBot) unfollowFriend(id int64) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
