@@ -14,6 +14,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"spacerocksbot/nasaclient"
+	"spacerocksbot/twbot"
+
 	conf "github.com/dns-gh/flagsconfig"
 )
 
@@ -42,20 +45,26 @@ const (
 	twitterFollowersPathFlag = "twitter-followers-path"
 	twitterFriendsPathFlag   = "twitter-friends-path"
 	// TODO save only relevant information on tweets, the file could become too large at some point otherwise
-	twitterTweetsPathFlag       = "twitter-tweets-path"
-	maxRetweetBySearch          = 2
-	maxFavoriteCountWatch       = 2
-	maxTryRetweetCount          = 5
-	retweetTextTag              = "RT @"
-	retweetTextIndex            = ": "
-	tweetHTTPTag                = "http://"
-	OneDayInNano          int64 = 86400000000000
+	twitterTweetsPathFlag = "twitter-tweets-path"
+	maxFavoriteCountWatch = 2
 )
 
 var (
-	maxRandTimeSleepBetweenRequests = 120               // seconds
-	timeSleepBetweenFollowUnFollow  = 300 * time.Second // seconds
+	maxRandTimeSleepBetweenRequests = 120 // seconds
 )
+
+func makeLog(path string) (string, *os.File, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, err
+	}
+	err = os.MkdirAll(filepath.Dir(abs), os.ModePerm)
+	if err != nil {
+		return "", nil, err
+	}
+	f, err := os.OpenFile(abs, os.O_WRONLY+os.O_APPEND+os.O_CREATE, os.ModePerm)
+	return abs, f, err
+}
 
 func main() {
 	firstOffset := flag.Int(firstOffsetFlag, 0, "[nasa] offset when fetching data for the first time (days)")
@@ -68,7 +77,7 @@ func main() {
 	twitterFriendsPath := flag.String(twitterFriendsPathFlag, "friends.json", "[twitter] data file path for friends")
 	twitterTweetsPath := flag.String(twitterTweetsPathFlag, "tweets.json", "[twitter] data file path for tweets")
 	debug := flag.Bool(debugFlag, false, "[twitter] debug mode")
-	config, err := conf.NewConfig("nasa.config")
+	_, err := conf.NewConfig("nasa.config")
 	// log to a file also
 	log.SetFlags(0)
 	logPath, f, err := makeLog(filepath.Join(filepath.Dir(os.Args[0]), "Debug", "bot.log"))
@@ -92,14 +101,15 @@ func main() {
 	log.Println("[twitter] debug:", *debug)
 
 	log.Println(" --- making and launching twitter bot ---")
-	bot := makeTwitterBot(*twitterFollowersPath, *twitterFriendsPath,
+	bot := twbot.MakeTwitterBot(*twitterFollowersPath, *twitterFriendsPath,
 		*twitterTweetsPath, *debug)
 	defer bot.Close()
 	log.Println(" --- making nasa client ---")
-	client := makeNasaClient(config)
+	client := nasaclient.MakeNasaClient(*firstOffset, *offset, *poll,
+		*nasaPath, *body, *debug)
 	bot.EnableAutoLike(maxFavoriteCountWatch)
-	bot.TweetSliceOnce(client.firstFetch)
-	bot.TweetSlicePeriodically(client.fetch, client.poll)
+	bot.TweetSliceOnce(client.FirstFetch)
+	bot.TweetSlicePeriodically(client.Fetch, client.GetPoll())
 	bot.RetweetPeriodically(searchTweetQueries, *update)
 	bot.AutoUnfollowFriends()
 	bot.AutoFollowFollowersOf("nasa", 1)

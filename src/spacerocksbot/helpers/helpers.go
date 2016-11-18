@@ -1,10 +1,8 @@
-package main
+package helpers
 
 import (
 	"log"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -26,11 +24,11 @@ func sort(tab []int64, left int, right int) {
 	sort(tab, i, right)
 }
 
-func quickSort(values []int64) {
+func QuickSort(values []int64) {
 	sort(values, 0, len(values)-1)
 }
 
-func parseBool(value string) bool {
+func ParseBool(value string) bool {
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		log.Fatalln(err)
@@ -38,7 +36,7 @@ func parseBool(value string) bool {
 	return parsed
 }
 
-func parseInt(value string) int {
+func ParseInt(value string) int {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		log.Fatalln(err)
@@ -46,7 +44,7 @@ func parseInt(value string) int {
 	return parsed
 }
 
-func parseTime(value string, timeFormat string) time.Time {
+func ParseTime(value string, timeFormat string) time.Time {
 	parsed, err := time.Parse(timeFormat, value)
 	if err != nil {
 		log.Fatalln(err)
@@ -54,7 +52,7 @@ func parseTime(value string, timeFormat string) time.Time {
 	return parsed
 }
 
-func parseDuration(value string) time.Duration {
+func ParseDuration(value string) time.Duration {
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
 		log.Fatalln(err)
@@ -66,12 +64,12 @@ func getRandom(duration int) int {
 	return rand.New(rand.NewSource(time.Now().UnixNano())).Intn(duration)
 }
 
-func sleep(duration int) {
+func Sleep(duration int) {
 	random := getRandom(duration)
 	time.Sleep(time.Second * time.Duration(random))
 }
 
-func sleepMinMax(min, max int) {
+func SleepMinMax(min, max int) {
 	if max < min {
 		temp := min
 		min = max
@@ -83,9 +81,9 @@ func sleepMinMax(min, max int) {
 	time.Sleep(time.Second * time.Duration(min+random))
 }
 
-func maybeSleepMinMax(chance, totalChance, min, max int) {
+func MaybeSleepMinMax(chance, totalChance, min, max int) {
 	if maybe(chance, totalChance) {
-		sleepMinMax(min, max)
+		SleepMinMax(min, max)
 	}
 }
 
@@ -97,30 +95,17 @@ func maybe(chance, totalChance int) bool {
 	return false
 }
 
-func getRandomElement(tab []string) string {
+func GetRandomElement(tab []string) string {
 	return tab[getRandom(len(tab))]
 }
 
 // truncate text to a hardcoded length.
 // It helps to visualize logs in the console.
-func trunc(text string) string {
+func Trunc(text string) string {
 	length := len(text)
 	maxLength := 90
 	if length > maxLength {
 		length = maxLength
 	}
 	return text[0:length]
-}
-
-func makeLog(path string) (string, *os.File, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", nil, err
-	}
-	err = os.MkdirAll(filepath.Dir(abs), os.ModePerm)
-	if err != nil {
-		return "", nil, err
-	}
-	f, err := os.OpenFile(abs, os.O_WRONLY+os.O_APPEND+os.O_CREATE, os.ModePerm)
-	return abs, f, err
 }

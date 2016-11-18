@@ -1,4 +1,4 @@
-package main
+package twbot
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 
 	"net/url"
 
+	"spacerocksbot/helpers"
 	"strconv"
 
 	"github.com/ChimeraCoder/anaconda"
@@ -17,7 +18,15 @@ import (
 )
 
 const (
-	defaultAutoLikeThreshold = 1000
+	defaultAutoLikeThreshold              = 1000
+	maxRetweetBySearch                    = 2
+	maxTryRetweetCount                    = 5
+	retweetTextTag                        = "RT @"
+	retweetTextIndex                      = ": "
+	tweetHTTPTag                          = "http://"
+	oneDayInNano                    int64 = 86400000000000
+	timeSleepBetweenFollowUnFollow        = 300 * time.Second // seconds
+	maxRandTimeSleepBetweenRequests       = 120               // seconds
 )
 
 type twitterUser struct {
@@ -35,7 +44,7 @@ type likePolicy struct {
 	threshold int
 }
 
-type twitterBot struct {
+type TwitterBot struct {
 	twitterClient *anaconda.TwitterApi
 	followersPath string
 	followers     *twitterUsers
@@ -48,7 +57,8 @@ type twitterBot struct {
 	quit          sync.WaitGroup
 }
 
-func makeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *twitterBot {
+// MakeTwitterBot creates a twitter bot
+func MakeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *TwitterBot {
 	errorList := []string{}
 	consumerKey := getEnv(errorList, "TWITTER_CONSUMER_KEY")
 	consumerSecret := getEnv(errorList, "TWITTER_CONSUMER_SECRET")
@@ -59,7 +69,7 @@ func makeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *
 	}
 	anaconda.SetConsumerKey(consumerKey)
 	anaconda.SetConsumerSecret(consumerSecret)
-	bot := &twitterBot{
+	bot := &TwitterBot{
 		twitterClient: anaconda.NewTwitterApi(accessToken, accessSecret),
 		followersPath: followersPath,
 		followers: &twitterUsers{
@@ -87,34 +97,34 @@ func makeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *
 	return bot
 }
 
-func (t *twitterBot) Wait() {
+func (t *TwitterBot) Wait() {
 	t.quit.Wait()
 }
 
-func (t *twitterBot) Close() {
+func (t *TwitterBot) Close() {
 	t.twitterClient.Close()
 }
 
-func (t *twitterBot) EnableAutoLike(threshold int) {
+func (t *TwitterBot) EnableAutoLike(threshold int) {
 	log.Println("[twitter] auto like enabled")
 	t.likePolicy.auto = true
 	t.likePolicy.threshold = threshold
 }
 
-func (t *twitterBot) DisableAutoLike() {
+func (t *TwitterBot) DisableAutoLike() {
 	log.Println("[twitter] auto like disabled")
 	t.likePolicy.auto = false
 	t.likePolicy.threshold = defaultAutoLikeThreshold
 }
 
-func (t *twitterBot) isFollower(id int64) bool {
+func (t *TwitterBot) isFollower(id int64) bool {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	_, ok := t.followers.Ids[strconv.FormatInt(id, 10)]
 	return ok
 }
 
-func (t *twitterBot) getFriend(id int64) (*twitterUser, bool) {
+func (t *TwitterBot) getFriend(id int64) (*twitterUser, bool) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	user, ok := t.friends.Ids[strconv.FormatInt(id, 10)]
@@ -127,12 +137,12 @@ func (t *twitterBot) getFriend(id int64) (*twitterUser, bool) {
 	return nil, false
 }
 
-func (t *twitterBot) getFriendToUnFollow() (int64, bool) {
+func (t *TwitterBot) getFriendToUnFollow() (int64, bool) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	for strID, user := range t.friends.Ids {
 		// unfollow only if is followed and is in database from at least 1 day
-		if time.Now().UnixNano()-user.Timestamp < OneDayInNano || !user.Follow {
+		if time.Now().UnixNano()-user.Timestamp < oneDayInNano || !user.Follow {
 			continue
 		}
 		id, err := strconv.ParseInt(strID, 10, 64)
@@ -144,7 +154,7 @@ func (t *twitterBot) getFriendToUnFollow() (int64, bool) {
 	return 0, false
 }
 
-func (t *twitterBot) addFriend(id int64) {
+func (t *TwitterBot) addFriend(id int64) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	t.friends.Ids[strconv.FormatInt(id, 10)] = &twitterUser{
@@ -157,7 +167,7 @@ func (t *twitterBot) addFriend(id int64) {
 	}
 }
 
-func (t *twitterBot) tweetSliceOnce(fetch func() ([]string, error)) {
+func (t *TwitterBot) tweetSliceOnce(fetch func() ([]string, error)) {
 	list, err := fetch()
 	if err != nil {
 		log.Println(err.Error())
@@ -169,11 +179,11 @@ func (t *twitterBot) tweetSliceOnce(fetch func() ([]string, error)) {
 			log.Println(err.Error())
 			continue
 		}
-		log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
+		log.Println("tweeting message (id:", tweet.Id, "):", helpers.Trunc(tweet.Text))
 	}
 }
 
-func (t *twitterBot) TweetSliceOnce(fetch func() ([]string, error)) {
+func (t *TwitterBot) TweetSliceOnce(fetch func() ([]string, error)) {
 	t.quit.Add(1)
 	go func() {
 		defer t.quit.Done()
@@ -188,12 +198,12 @@ func (t *twitterBot) TweetSliceOnce(fetch func() ([]string, error)) {
 				log.Println(err.Error())
 				continue
 			}
-			log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
+			log.Println("tweeting message (id:", tweet.Id, "):", helpers.Trunc(tweet.Text))
 		}
 	}()
 }
 
-func (t *twitterBot) TweetSlicePeriodically(fetch func() ([]string, error), freq time.Duration) {
+func (t *TwitterBot) TweetSlicePeriodically(fetch func() ([]string, error), freq time.Duration) {
 	t.quit.Add(1)
 	go func() {
 		defer t.quit.Done()
@@ -205,7 +215,7 @@ func (t *twitterBot) TweetSlicePeriodically(fetch func() ([]string, error), freq
 	}()
 }
 
-func (t *twitterBot) tweetOnce(fetch func() (string, error)) {
+func (t *TwitterBot) tweetOnce(fetch func() (string, error)) {
 	msg, err := fetch()
 	if err != nil {
 		log.Println(err.Error())
@@ -216,10 +226,10 @@ func (t *twitterBot) tweetOnce(fetch func() (string, error)) {
 		log.Println(err.Error())
 		return
 	}
-	log.Println("tweeting message (id:", tweet.Id, "):", trunc(tweet.Text))
+	log.Println("tweeting message (id:", tweet.Id, "):", helpers.Trunc(tweet.Text))
 }
 
-func (t *twitterBot) TweetOnce(fetch func() (string, error)) {
+func (t *TwitterBot) TweetOnce(fetch func() (string, error)) {
 	t.quit.Add(1)
 	go func() {
 		defer t.quit.Done()
@@ -227,7 +237,7 @@ func (t *twitterBot) TweetOnce(fetch func() (string, error)) {
 	}()
 }
 
-func (t *twitterBot) TweetPeriodically(fetch func() (string, error), freq time.Duration) {
+func (t *TwitterBot) TweetPeriodically(fetch func() (string, error), freq time.Duration) {
 	t.quit.Add(1)
 	go func() {
 		defer t.quit.Done()
@@ -239,14 +249,14 @@ func (t *twitterBot) TweetPeriodically(fetch func() (string, error), freq time.D
 	}()
 }
 
-func (t *twitterBot) retweetOnce(queries []string) {
+func (t *TwitterBot) retweetOnce(queries []string) {
 	err := t.autoRetweet(queries)
 	if err != nil {
 		log.Println(err.Error())
 	}
 }
 
-func (t *twitterBot) RetweetOnce(searchQueries []string) {
+func (t *TwitterBot) RetweetOnce(searchQueries []string) {
 	queries := make([]string, len(searchQueries))
 	copy(queries, searchQueries)
 	t.quit.Add(1)
@@ -256,7 +266,7 @@ func (t *twitterBot) RetweetOnce(searchQueries []string) {
 	}()
 }
 
-func (t *twitterBot) RetweetPeriodically(searchQueries []string, freq time.Duration) {
+func (t *TwitterBot) RetweetPeriodically(searchQueries []string, freq time.Duration) {
 	queries := make([]string, len(searchQueries))
 	copy(queries, searchQueries)
 	t.quit.Add(1)
@@ -278,7 +288,7 @@ func getEnv(errorList []string, key string) string {
 	return value
 }
 
-func (t *twitterBot) loadTweets() ([]anaconda.Tweet, error) {
+func (t *TwitterBot) loadTweets() ([]anaconda.Tweet, error) {
 	tweets := &[]anaconda.Tweet{}
 	if _, err := os.Stat(t.tweetsPath); os.IsNotExist(err) {
 		tojson.Save(t.tweetsPath, tweets)
@@ -290,7 +300,7 @@ func (t *twitterBot) loadTweets() ([]anaconda.Tweet, error) {
 	return *tweets, nil
 }
 
-func (t *twitterBot) getOriginalText(tweet *anaconda.Tweet) string {
+func (t *TwitterBot) getOriginalText(tweet *anaconda.Tweet) string {
 	text := tweet.Text
 	if strings.Contains(tweet.Text, retweetTextTag) {
 		tab := strings.SplitN(text, retweetTextIndex, 2)
@@ -311,7 +321,7 @@ func (t *twitterBot) getOriginalText(tweet *anaconda.Tweet) string {
 	return text
 }
 
-func (t *twitterBot) takeDifference(previous, current []anaconda.Tweet) []anaconda.Tweet {
+func (t *TwitterBot) takeDifference(previous, current []anaconda.Tweet) []anaconda.Tweet {
 	diff := []anaconda.Tweet{}
 	addedByID := map[int64]struct{}{}
 	addedByText := map[string]struct{}{}
@@ -321,12 +331,12 @@ func (t *twitterBot) takeDifference(previous, current []anaconda.Tweet) []anacon
 	}
 	for _, v := range current {
 		if _, ok := addedByID[v.Id]; ok {
-			log.Printf("[twitter] found a duplicate (same id) from database id:%d, text:%s", v.Id, trunc(v.Text))
+			log.Printf("[twitter] found a duplicate (same id) from database id:%d, text:%s", v.Id, helpers.Trunc(v.Text))
 			continue
 		}
 		text := t.getOriginalText(&v)
 		if _, ok := addedByText[text]; ok {
-			log.Printf("[twitter] found a duplicate (same original text) from database id:%d, text:%s", v.Id, trunc(v.Text))
+			log.Printf("[twitter] found a duplicate (same original text) from database id:%d, text:%s", v.Id, helpers.Trunc(v.Text))
 			continue
 		}
 		addedByID[v.Id] = struct{}{}
@@ -336,7 +346,7 @@ func (t *twitterBot) takeDifference(previous, current []anaconda.Tweet) []anacon
 	return diff
 }
 
-func (t *twitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet {
+func (t *TwitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet {
 	temp := map[string]struct{}{}
 	stripped := []anaconda.Tweet{}
 	for _, tweet := range current {
@@ -345,13 +355,13 @@ func (t *twitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet
 			temp[text] = struct{}{}
 			stripped = append(stripped, tweet)
 		} else {
-			log.Printf("[twitter] found a duplicate (id:%d), text:%s", tweet.Id, trunc(tweet.Text))
+			log.Printf("[twitter] found a duplicate (id:%d), text:%s", tweet.Id, helpers.Trunc(tweet.Text))
 		}
 	}
 	return stripped
 }
 
-func (t *twitterBot) like(tweet *anaconda.Tweet) {
+func (t *TwitterBot) like(tweet *anaconda.Tweet) {
 	if !t.likePolicy.auto {
 		return
 	}
@@ -360,22 +370,22 @@ func (t *twitterBot) like(tweet *anaconda.Tweet) {
 		if err != nil {
 			log.Printf("[twitter] failed to like tweet (id:%d), error: %v\n", tweet.Id, err)
 		}
-		log.Printf("[twitter] liked tweet (id:%d): %s\n", tweet.Id, trunc(tweet.Text))
+		log.Printf("[twitter] liked tweet (id:%d): %s\n", tweet.Id, helpers.Trunc(tweet.Text))
 	} else if tweet.RetweetedStatus != nil &&
 		tweet.RetweetedStatus.FavoriteCount > t.likePolicy.threshold {
 		t.like(tweet.RetweetedStatus)
 	}
 }
 
-func (t *twitterBot) sleep() {
+func (t *TwitterBot) sleep() {
 	if !t.debug {
-		sleep(maxRandTimeSleepBetweenRequests)
+		helpers.Sleep(maxRandTimeSleepBetweenRequests)
 	}
 }
 
-func (t *twitterBot) maybeSleep(chance, totalChance, min, max int) {
+func (t *TwitterBot) maybeSleep(chance, totalChance, min, max int) {
 	if !t.debug {
-		maybeSleepMinMax(chance, totalChance, min, max)
+		helpers.MaybeSleepMinMax(chance, totalChance, min, max)
 	}
 }
 
@@ -390,7 +400,7 @@ func checkBotRestriction(err error) {
 	}
 }
 
-func (t *twitterBot) unfollowUser(user *anaconda.User) {
+func (t *TwitterBot) unfollowUser(user *anaconda.User) {
 	unfollowed, err := t.twitterClient.UnfollowUserId(user.Id)
 	if err != nil {
 		checkBotRestriction(err)
@@ -411,7 +421,7 @@ func checkUnableToFollowAtThisTime(err error) bool {
 	return false
 }
 
-func (t *twitterBot) followUser(user *anaconda.User) {
+func (t *TwitterBot) followUser(user *anaconda.User) {
 	followed, err := t.twitterClient.FollowUserId(user.Id, nil)
 	if err != nil && !checkUnableToFollowAtThisTime(err) {
 		checkBotRestriction(err)
@@ -420,7 +430,7 @@ func (t *twitterBot) followUser(user *anaconda.User) {
 	log.Printf("[twitter] following user (id:%d, name:%s)\n", followed.Id, followed.Name)
 }
 
-func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err error) {
+func (t *TwitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err error) {
 	for _, tweet := range current {
 		t.like(&tweet)
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
@@ -431,7 +441,7 @@ func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err e
 		}
 		rt = retweet
 		t.like(&rt)
-		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", rt.Id, tweet.Id, trunc(rt.Text))
+		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", rt.Id, tweet.Id, helpers.Trunc(rt.Text))
 		t.followUser(&tweet.User)
 		return rt, err
 	}
@@ -439,9 +449,9 @@ func (t *twitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err e
 	return rt, err
 }
 
-func (t *twitterBot) getTweets(queries []string, previous []anaconda.Tweet) ([]anaconda.Tweet, error) {
+func (t *TwitterBot) getTweets(queries []string, previous []anaconda.Tweet) ([]anaconda.Tweet, error) {
 	log.Println("[twitter] checking tweets to retweet...")
-	query := getRandomElement(queries)
+	query := helpers.GetRandomElement(queries)
 	log.Println("[twitter] searching with query:", query)
 	v := url.Values{}
 	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
@@ -456,7 +466,7 @@ func (t *twitterBot) getTweets(queries []string, previous []anaconda.Tweet) ([]a
 	return current, nil
 }
 
-func (t *twitterBot) autoRetweet(queries []string) error {
+func (t *TwitterBot) autoRetweet(queries []string) error {
 	count := 0
 	previous, err := t.loadTweets()
 	if err != nil {
@@ -483,7 +493,7 @@ func (t *twitterBot) autoRetweet(queries []string) error {
 	}
 }
 
-func (t *twitterBot) updateFollowers() error {
+func (t *TwitterBot) updateFollowers() error {
 	followers := &twitterUsers{
 		Ids: make(map[string]*twitterUser),
 	}
@@ -519,7 +529,7 @@ func (t *twitterBot) updateFollowers() error {
 	return nil
 }
 
-func (t *twitterBot) updateFriends() error {
+func (t *TwitterBot) updateFriends() error {
 	friends := &twitterUsers{
 		Ids: make(map[string]*twitterUser),
 	}
@@ -557,7 +567,7 @@ func (t *twitterBot) updateFriends() error {
 
 // unfollowFriend flags the friend as not followed anymore.
 // We do not remove friends from database.
-func (t *twitterBot) unfollowFriend(id int64) {
+func (t *TwitterBot) unfollowFriend(id int64) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	t.friends.Ids[strconv.FormatInt(id, 10)].Follow = false
@@ -567,7 +577,7 @@ func (t *twitterBot) unfollowFriend(id int64) {
 	}
 }
 
-func (t *twitterBot) unfollowAll() {
+func (t *TwitterBot) unfollowAll() {
 	var id int64
 	for ok := true; ok; id, ok = t.getFriendToUnFollow() {
 		if !ok {
@@ -589,7 +599,7 @@ func (t *twitterBot) unfollowAll() {
 	t.unfollowAll()
 }
 
-func (t *twitterBot) AutoUnfollowFriends() {
+func (t *TwitterBot) AutoUnfollowFriends() {
 	t.quit.Add(1)
 	go func() {
 		defer t.quit.Done()
@@ -599,7 +609,7 @@ func (t *twitterBot) AutoUnfollowFriends() {
 	}()
 }
 
-func (t *twitterBot) followAll(ids []int64) {
+func (t *TwitterBot) followAll(ids []int64) {
 	for _, id := range ids {
 		if _, ok := t.getFriend(id); ok || t.isFollower(id) {
 			continue
@@ -618,7 +628,7 @@ func (t *twitterBot) followAll(ids []int64) {
 	}
 }
 
-func (t *twitterBot) fetchUserIds(query string, maxPage int) []int64 {
+func (t *TwitterBot) fetchUserIds(query string, maxPage int) []int64 {
 	users, err := t.twitterClient.GetUserSearch(query, nil)
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -656,7 +666,7 @@ func (t *twitterBot) fetchUserIds(query string, maxPage int) []int64 {
 	return ids
 }
 
-func (t *twitterBot) AutoFollowFollowersOf(query string, maxPage int) {
+func (t *TwitterBot) AutoFollowFollowersOf(query string, maxPage int) {
 	t.quit.Add(1)
 	go func() {
 		defer t.quit.Done()
