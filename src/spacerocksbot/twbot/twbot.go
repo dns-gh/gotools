@@ -75,6 +75,12 @@ type TwitterBot struct {
 }
 
 // MakeTwitterBot creates a twitter bot
+// You have to set up 4 environement variable:
+// - TWITTER_CONSUMER_KEY
+// - TWITTER_CONSUMER_SECRET
+// - TWITTER_ACCESS_TOKEN
+// - TWITTER_ACCESS_SECRET
+// They can be found here by creating a twitter app: https://apps.twitter.com/
 func MakeTwitterBot(followersPath, friendsPath, tweetsPath string, debug bool) *TwitterBot {
 	log.Println("[twitter] making twitter bot")
 	errorList := []string{}

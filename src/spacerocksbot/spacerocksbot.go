@@ -54,7 +54,21 @@ var (
 	maxRandTimeSleepBetweenRequests = 120 // seconds
 )
 
-func makeLog(path string) (string, *os.File, error) {
+type timeWriter struct {
+	writer io.Writer
+}
+
+func (w timeWriter) Write(p []byte) (int, error) {
+	date := time.Now().Format("[2006-01-02 15:04:05] ")
+	p = append([]byte(date), p...)
+	return w.writer.Write(p)
+}
+
+func makeDateWriter(w io.Writer) io.Writer {
+	return &timeWriter{w}
+}
+
+func makeLogger(path string) (string, *os.File, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", nil, err
@@ -81,10 +95,10 @@ func main() {
 	_, err := conf.NewConfig("nasa.config")
 	// log to a file also
 	log.SetFlags(0)
-	logPath, f, err := makeLog(filepath.Join(filepath.Dir(os.Args[0]), "Debug", "bot.log"))
+	logPath, f, err := makeLogger(filepath.Join(filepath.Dir(os.Args[0]), "Debug", "bot.log"))
 	if err == nil {
 		defer f.Close()
-		log.SetOutput(io.MultiWriter(f, os.Stderr))
+		log.SetOutput(makeDateWriter(io.MultiWriter(f, os.Stderr)))
 	}
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -100,11 +114,9 @@ func main() {
 	log.Println("[twitter] twitter-friends-path:", *twitterFriendsPath)
 	log.Println("[twitter] twitter-tweets-path:", *twitterTweetsPath)
 	log.Println("[twitter] debug:", *debug)
-	bot := twbot.MakeTwitterBot(*twitterFollowersPath, *twitterFriendsPath,
-		*twitterTweetsPath, *debug)
+	bot := twbot.MakeTwitterBot(*twitterFollowersPath, *twitterFriendsPath, *twitterTweetsPath, *debug)
 	defer bot.Close()
-	client := nasaclient.MakeNasaClient(*firstOffset, *offset, *poll,
-		*nasaPath, *body, *debug)
+	client := nasaclient.MakeNasaClient(*firstOffset, *offset, *poll, *nasaPath, *body, *debug)
 	bot.SetLikePolicy(true, maxFavoriteCountWatch)
 	bot.SetRetweetPolicy(maxTryRetweet, true)
 	bot.TweetSliceOnceAsync(client.FirstFetch)
