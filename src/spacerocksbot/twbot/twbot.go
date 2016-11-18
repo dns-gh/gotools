@@ -44,7 +44,15 @@ type likePolicy struct {
 	threshold int
 }
 
-// TwitterBot represents the twitter bot
+// TwitterBot represents the twitter bot:
+// * The database is made of 3 files: followers, friends and tweets.
+// * They are here to ensure to:
+//   - not add as friend a friend
+//   - not remove as friend a non friend
+//   - not retweet a tweet already retweeted
+//   - keep track of friends to remove them properly at a specific time if wanted
+// * The like policy allow to automatically likes tweets that are already liked.
+// * The 'debug' mode creates more logs and remove all sleeps between API twitter calls.
 type TwitterBot struct {
 	twitterClient *anaconda.TwitterApi
 	followersPath string
@@ -136,7 +144,7 @@ func (t *TwitterBot) TweetSliceOnce(fetch func() ([]string, error)) error {
 			log.Println(err.Error())
 			continue
 		}
-		log.Println("tweeting message (id:", tweet.Id, "):", helpers.Trunc(tweet.Text))
+		log.Println("tweeting message (id:", tweet.Id, "):", tweet.Text)
 	}
 	return nil
 }
@@ -159,7 +167,7 @@ func (t *TwitterBot) TweetSliceOnceAsync(fetch func() ([]string, error)) {
 				log.Println(err.Error())
 				continue
 			}
-			log.Println("tweeting message (id:", tweet.Id, "):", helpers.Trunc(tweet.Text))
+			t.print(fmt.Sprintf("tweeting message (id: %d): %s\n", tweet.Id, tweet.Text))
 		}
 	}()
 }
@@ -195,7 +203,7 @@ func (t *TwitterBot) TweetOnce(fetch func() (string, error)) error {
 	if err != nil {
 		return err
 	}
-	log.Println("tweeting message (id:", tweet.Id, "):", helpers.Trunc(tweet.Text))
+	t.print(fmt.Sprintf("tweeting message (id: %d): %s\n", tweet.Id, tweet.Text))
 	return nil
 }
 
@@ -290,7 +298,7 @@ func (t *TwitterBot) AutoUnfollowFriendsAsync() {
 		defer t.quit.Done()
 		log.Println("[twitter] launching auto unfollow...")
 		t.unfollowAll()
-		log.Println("[twitter] [WARNING] - auto unfollow disabled")
+		log.Println("[twitter] auto unfollow disabled")
 	}()
 }
 
@@ -304,7 +312,7 @@ func (t *TwitterBot) AutoFollowFollowersAsync(query string, maxPage int) {
 		defer t.quit.Done()
 		log.Printf("[twitter] launching auto follow with '%s' over %d page(s)...\n", query, maxPage)
 		t.followAll(t.fetchUserIds(query, maxPage))
-		log.Println("[twitter] [WARNING] - auto follow disabled")
+		log.Println("[twitter] auto follow disabled")
 	}()
 }
 
@@ -359,12 +367,12 @@ func (t *TwitterBot) takeDifference(previous, current []anaconda.Tweet) []anacon
 	}
 	for _, v := range current {
 		if _, ok := addedByID[v.Id]; ok {
-			log.Printf("[twitter] found a duplicate (same id) from database id:%d, text:%s", v.Id, helpers.Trunc(v.Text))
+			t.print(fmt.Sprintf("[twitter] found a duplicate (same id) from database id:%d, text:%s\n", v.Id, v.Text))
 			continue
 		}
 		text := t.getOriginalText(&v)
 		if _, ok := addedByText[text]; ok {
-			log.Printf("[twitter] found a duplicate (same original text) from database id:%d, text:%s", v.Id, helpers.Trunc(v.Text))
+			t.print(fmt.Sprintf("[twitter] found a duplicate (same original text) from database id:%d, text:%s\n", v.Id, v.Text))
 			continue
 		}
 		addedByID[v.Id] = struct{}{}
@@ -383,7 +391,7 @@ func (t *TwitterBot) removeDuplicates(current []anaconda.Tweet) []anaconda.Tweet
 			temp[text] = struct{}{}
 			stripped = append(stripped, tweet)
 		} else {
-			log.Printf("[twitter] found a duplicate (id:%d), text:%s", tweet.Id, helpers.Trunc(tweet.Text))
+			t.print(fmt.Sprintf("[twitter] found a duplicate (id:%d), text:%s\n", tweet.Id, tweet.Text))
 		}
 	}
 	return stripped
@@ -396,12 +404,19 @@ func (t *TwitterBot) like(tweet *anaconda.Tweet) {
 	if tweet.FavoriteCount > t.likePolicy.threshold {
 		_, err := t.twitterClient.Favorite(tweet.Id)
 		if err != nil {
-			log.Printf("[twitter] failed to like tweet (id:%d), error: %v\n", tweet.Id, err)
+			t.print(fmt.Sprintf("[twitter] failed to like tweet (id:%d), error: %v\n", tweet.Id, err))
+			return
 		}
-		log.Printf("[twitter] liked tweet (id:%d): %s\n", tweet.Id, helpers.Trunc(tweet.Text))
+		log.Printf("[twitter] liked tweet (id:%d)\n", tweet.Id)
 	} else if tweet.RetweetedStatus != nil &&
 		tweet.RetweetedStatus.FavoriteCount > t.likePolicy.threshold {
 		t.like(tweet.RetweetedStatus)
+	}
+}
+
+func (t *TwitterBot) print(text string) {
+	if t.debug {
+		log.Println(text)
 	}
 }
 
@@ -432,7 +447,7 @@ func (t *TwitterBot) unfollowUser(user *anaconda.User) {
 	unfollowed, err := t.twitterClient.UnfollowUserId(user.Id)
 	if err != nil {
 		checkBotRestriction(err)
-		log.Printf("[twitter] failed to unfollow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
+		t.print(fmt.Sprintf("[twitter] failed to unfollow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err))
 	}
 	log.Printf("[twitter] unfollowing user (id:%d, name:%s)\n", unfollowed.Id, unfollowed.Name)
 }
@@ -453,23 +468,25 @@ func (t *TwitterBot) followUser(user *anaconda.User) {
 	followed, err := t.twitterClient.FollowUserId(user.Id, nil)
 	if err != nil && !checkUnableToFollowAtThisTime(err) {
 		checkBotRestriction(err)
-		log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
+		t.print(fmt.Sprintf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err))
 	}
 	log.Printf("[twitter] following user (id:%d, name:%s)\n", followed.Id, followed.Name)
 }
 
+// retweet retweets the first tweet been able to retweet.
+// It returns an error if no retweet has been possible.
 func (t *TwitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err error) {
 	for _, tweet := range current {
 		t.like(&tweet)
 		retweet, err := t.twitterClient.Retweet(tweet.Id, false)
 		if err != nil {
-			log.Printf("[twitter] failed to retweet tweet (id:%d), error: %v\n", tweet.Id, err)
+			t.print(fmt.Sprintf("[twitter] failed to retweet tweet (id:%d), error: %v\n", tweet.Id, err))
 			t.followUser(&tweet.User)
 			continue
 		}
 		rt = retweet
 		t.like(&rt)
-		log.Printf("[twitter] retweet (r_id:%d, id:%d): %s\n", rt.Id, tweet.Id, helpers.Trunc(rt.Text))
+		log.Printf("[twitter] retweet (rid:%d, id:%d)\n", rt.Id, tweet.Id)
 		t.followUser(&tweet.User)
 		return rt, err
 	}
@@ -478,9 +495,8 @@ func (t *TwitterBot) retweet(current []anaconda.Tweet) (rt anaconda.Tweet, err e
 }
 
 func (t *TwitterBot) getTweets(queries []string, previous []anaconda.Tweet) ([]anaconda.Tweet, error) {
-	log.Println("[twitter] checking tweets to retweet...")
 	query := helpers.GetRandomElement(queries)
-	log.Println("[twitter] searching with query:", query)
+	log.Println("[twitter] searching tweets to retweet with query:", query)
 	v := url.Values{}
 	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
 	results, err := t.twitterClient.GetSearch(query, v)
@@ -490,7 +506,7 @@ func (t *TwitterBot) getTweets(queries []string, previous []anaconda.Tweet) ([]a
 	current := results.Statuses
 	current = t.removeDuplicates(current)
 	current = t.takeDifference(previous, current)
-	log.Println("[twitter] found", len(current), "tweet(s) matching pattern")
+	log.Println("[twitter] found", len(current), "tweet(s) to retweet matching pattern")
 	return current, nil
 }
 
@@ -685,7 +701,7 @@ func (t *TwitterBot) followAll(ids []int64) {
 		user, err := t.twitterClient.FollowUserId(id, nil)
 		if err != nil && !checkUnableToFollowAtThisTime(err) {
 			checkBotRestriction(err)
-			log.Printf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err)
+			t.print(fmt.Sprintf("[twitter] failed to follow user (id:%d, name:%s), error: %v\n", user.Id, user.Name, err))
 			continue
 		}
 		t.addFriend(id)
