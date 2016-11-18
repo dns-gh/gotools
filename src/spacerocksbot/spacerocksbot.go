@@ -108,10 +108,10 @@ func main() {
 	client := nasaclient.MakeNasaClient(*firstOffset, *offset, *poll,
 		*nasaPath, *body, *debug)
 	bot.EnableAutoLike(maxFavoriteCountWatch)
-	bot.TweetSliceOnce(client.FirstFetch)
-	bot.TweetSlicePeriodically(client.Fetch, client.GetPoll())
-	bot.RetweetPeriodically(searchTweetQueries, *update)
-	bot.AutoUnfollowFriends()
-	bot.AutoFollowFollowersOf("nasa", 1)
+	bot.TweetSliceOnceAsync(client.FirstFetch)
+	bot.TweetSlicePeriodicallyAsync(client.Fetch, client.GetPoll())
+	bot.RetweetPeriodicallyAsync(searchTweetQueries, *update)
+	bot.AutoUnfollowFriendsAsync()
+	bot.AutoFollowFollowersAsync("nasa", 1)
 	bot.Wait()
 }
