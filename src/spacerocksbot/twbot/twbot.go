@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultAutoLikeThreshold              = 1000
-	maxRetweetBySearch                    = 2
+	defaultMaxRetweetBySearch             = 5 // keep 3 tweets, the 2 first tweets being useless ?
 	retweetTextTag                        = "RT @"
 	retweetTextIndex                      = ": "
 	tweetHTTPTag                          = "http://"
@@ -515,7 +515,7 @@ func (t *TwitterBot) getTweets(queries []string, previous []anaconda.Tweet) ([]a
 	query := helpers.GetRandomElement(queries)
 	log.Println("[twitter] searching tweets to retweet with query:", query)
 	v := url.Values{}
-	v.Set("count", strconv.Itoa(maxRetweetBySearch+2))
+	v.Set("count", strconv.Itoa(defaultMaxRetweetBySearch))
 	results, err := t.twitterClient.GetSearch(query, v)
 	if err != nil {
 		return nil, err
